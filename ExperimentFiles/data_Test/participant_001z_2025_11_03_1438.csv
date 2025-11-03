@@ -1,0 +1,11 @@
+participant_ID,session,block,trial_num,auditory_condition,visual_condition,visual_location,difficulty,stimulus_tilt,correct_response,participant_response,is_correct,response_time
+001z,0,0,1,center_stationary,foveal,center,easy,R,j,f,0,372.4651336669922
+001z,0,0,2,center_stationary,foveal,center,easy,L,f,f,1,378.58057022094727
+001z,0,0,3,center_stationary,foveal,center,easy,L,f,f,1,192.0032501220703
+001z,0,0,4,center_stationary,foveal,center,easy,L,f,f,1,261.4331245422363
+001z,0,0,5,center_stationary,foveal,center,easy,R,j,j,1,173.45046997070312
+001z,0,0,6,center_stationary,foveal,center,easy,L,f,f,1,234.44104194641113
+001z,0,0,7,center_stationary,foveal,center,easy,L,f,f,1,263.25154304504395
+001z,0,0,8,center_stationary,foveal,center,easy,L,f,f,1,217.4522876739502
+001z,0,0,9,center_stationary,foveal,center,easy,L,f,j,0,2870.1720237731934
+001z,0,0,10,center_stationary,foveal,center,easy,R,j,f,0,167.68503189086914

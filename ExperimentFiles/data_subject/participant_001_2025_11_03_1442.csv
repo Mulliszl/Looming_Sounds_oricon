@@ -1,0 +1,4 @@
+participant_ID,session,block,trial_num,auditory_condition,visual_condition,visual_location,difficulty,stimulus_tilt,correct_response,participant_response,is_correct,response_time
+001,0,0,1,center_stationary,foveal,center,easy,R,j,j,1,401.8445014953613
+001,0,0,2,center_stationary,foveal,center,easy,L,f,f,1,456.77685737609863
+001,0,0,3,center_stationary,foveal,center,easy,R,j,j,1,281.8865776062012
