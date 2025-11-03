@@ -1,0 +1,286 @@
+---
+title: "A Priori Power Analysis for Visual Orientation Sensitivity"
+author: "Rosewood"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+# Introduction
+
+This document presents a simulated a priori power analysis for a **3x2x3 fully within-subjects repeated-measures design**. The analysis aims to determine the required sample size to detect a significant three-way interaction effect on two dependent variables: **Accuracy** and **Response Time (RT)**.
+
+The experimental factors are:
+1.  **Auditory Condition (3 levels):** Looming, Stationary, No Sound
+2.  **Visual Field Location (2 levels):** Center, Periphery
+3.  **Task Difficulty (3 levels):** Easy, Medium, Hard
+
+# Method
+
+The power analysis is conducted by simulating data based on effect sizes estimated from a previous dataset. For each sample size tested, data is simulated 1000 times, a repeated-measures ANOVA is performed, and the statistical power is calculated as the proportion of simulations that yield a p-value below the alpha level (α = 0.05) for the three-way interaction.
+
+## Setup
+
+First, we load the necessary R packages.
+
+```{r setup, message=FALSE, warning=FALSE}
+# Install packages if not already installed
+if (!requireNamespace("tidyverse", quietly = TRUE)) install.packages("tidyverse")
+if (!requireNamespace("afex", quietly = TRUE)) install.packages("afex")
+if (!requireNamespace("readxl", quietly = TRUE)) install.packages("readxl")
+
+library(tidyverse)
+library(afex)
+library(readxl)
+```
+
+## Step 1: Calculate and Estimate Effect Sizes
+
+This chunk loads the pilot data, cleans it, calculates the means for the "Easy" difficulty condition (which is the only one present in the orientation task data), and then estimates the means for the "Medium" and "Hard" conditions based on the theory presented in your manuscript.
+
+```{r calculate_effect_sizes_from_pilot, message=FALSE, warning=FALSE}
+# --- Step 1: Load Libraries and Data ---
+
+library(tidyverse)
+library(readxl)
+
+# Provide the FULL path to the XLSX file.
+file_path <- "C:/Users/zach/OneDrive - North Carolina State University/TVLR/Looming_Sounds_Contrast/Zach work/ori_con_full.xlsx"
+ori_con_data <- read_xlsx(file_path, col_names = TRUE)
+
+
+# --- Step 2: Clean Data by Renaming Columns by Position ---
+
+# This is the most robust method for cleaning the column names.
+colnames(ori_con_data)[5] <- "sound"
+colnames(ori_con_data)[8] <- "location"
+colnames(ori_con_data)[9] <- "difficulty"
+colnames(ori_con_data)[11] <- "correct"
+colnames(ori_con_data)[12] <- "rt"
+
+
+# --- Step 3: Calculate Means for the "Easy" Condition with Robust Handling ---
+
+# First, filter for the orientation task and create base factors.
+easy_condition_data <- ori_con_data %>%
+  filter(task_type == "orientation") %>%
+  mutate(
+    correct = as.numeric(correct), 
+    rt = as.numeric(rt),
+    sound_condition = factor(sound,
+                             levels = c(32, 1, -1),
+                             labels = c("Looming", "Stationary", "No_Sound")),
+    visual_location = factor(location,
+                             levels = c(0, 1),
+                             labels = c("Center", "Periphery"))
+  )
+
+# Create a complete grid to ensure all 6 conditions are present
+all_conditions <- expand.grid(
+  sound_condition = c("Looming", "Stationary", "No_Sound"),
+  visual_location = c("Center", "Periphery")
+)
+
+# Calculate "Easy" accuracy means and join to the complete grid
+easy_acc_means <- easy_condition_data %>%
+  group_by(sound_condition, visual_location) %>%
+  dplyr::summarise(mean_acc = mean(correct, na.rm = TRUE), .groups = 'drop') %>%
+  right_join(all_conditions, by = c("sound_condition", "visual_location")) %>%
+  mutate(mean_acc = ifelse(is.na(mean_acc), mean(mean_acc, na.rm = TRUE), mean_acc)) %>%
+  dplyr::arrange(sound_condition, visual_location)
+
+# Trim RT data to remove outliers before calculating the mean
+easy_rt_means <- easy_condition_data %>%
+  filter(correct == 1) %>%
+  filter(rt >= 250, rt <= 2500) %>%
+  group_by(sound_condition, visual_location) %>%
+  dplyr::summarise(mean_rt = mean(rt, na.rm = TRUE), .groups = 'drop') %>%
+  right_join(all_conditions, by = c("sound_condition", "visual_location")) %>%
+  mutate(mean_rt = ifelse(is.na(mean_rt), mean(mean_rt, na.rm = TRUE), mean_rt)) %>%
+  dplyr::arrange(sound_condition, visual_location)
+
+
+# --- Step 4: Estimate "Medium" & "Hard" Conditions with 50% Accuracy Floor ---
+
+# --- FIX: Directly model the accuracy drop-off to a 50% chance level ---
+# 1. Define "Hard" condition as 50% (chance)
+hard_acc_means <- rep(0.50, 6)
+
+# 2. Define "Medium" as the midpoint between "Easy" and "Hard"
+medium_acc_means <- (easy_acc_means$mean_acc + hard_acc_means) / 2
+
+# 3. Combine into a matrix (rows are sound/location conditions, cols are difficulty)
+acc_matrix <- cbind(easy_acc_means$mean_acc, medium_acc_means, hard_acc_means)
+
+# 4. Apply a slight penalty to "No Sound" conditions based on theory
+no_sound_penalty_acc <- 0.02 # Subtract 2% accuracy for No Sound conditions
+acc_matrix[3,] <- acc_matrix[3,] - no_sound_penalty_acc # No Sound, Center
+acc_matrix[6,] <- acc_matrix[6,] - no_sound_penalty_acc # No Sound, Periphery
+
+# 5. Build the final vector
+mu_vector_acc <- as.vector(t(acc_matrix))
+
+# RT estimation remains the same
+rt_matrix <- matrix(c(
+   0,  75, 150,  # Looming-Center
+   0,  75, 150,  # Looming-Periphery
+   0,  75, 150,  # Stationary-Center
+   0,  75, 150,  # Stationary-Periphery
+  10, 100, 160,  # NoSound-Center (slightly slower)
+  10, 100, 160   # NoSound-Periphery (slightly slower)
+), nrow = 6, byrow = TRUE)
+
+mu_vector_rt <- as.vector(t(outer(easy_rt_means$mean_rt, c(1,1,1)) + rt_matrix))
+
+
+# --- Step 5: Display the Final Estimated mu_vectors ---
+
+cat("--- For Accuracy (Estimated Vector with 50% Floor) ---\n")
+dput(mu_vector_acc)
+
+cat("\n--- For Response Time (Estimated Vector from Trimmed Data) ---\n")
+dput(mu_vector_rt)
+```
+
+## Step 2: Power Simulation for Accuracy
+
+This simulation uses a stable **random-intercepts model** (`+ (1 | id)`) and a `tryCatch` block to prevent crashes.
+
+```{r power_simulation_accuracy, cache=TRUE}
+# Simulation Parameters
+sample_sizes <- seq(30, 80, by = 5)
+nsim <- 1000 
+sd_acc <- 0.2
+alpha <- 0.05
+
+# Run the simulation loop
+power_results_acc <- sapply(sample_sizes, function(n) {
+  significant_results <- 0
+  for (i in 1:nsim) {
+    sim_data <- tibble(
+      id = factor(rep(1:n, each = 18)),
+      sound = factor(rep(c("Looming", "Stationary", "No_Sound"), each = 6, times = n)),
+      location = factor(rep(c("Center", "Periphery"), each = 3, times = 3 * n)),
+      difficulty = factor(rep(c("Easy", "Medium", "Hard"), times = 6 * n)),
+      accuracy = rnorm(n * 18, mean = rep(mu_vector_acc, times = n), sd = sd_acc)
+    )
+    
+    # Use a stable model and tryCatch to handle any errors
+    p_value <- tryCatch({
+      model_anova <- suppressMessages(aov_4(accuracy ~ sound * location * difficulty + (1 | id), data = sim_data))
+      summary(model_anova)$anova_table$`Pr(>F)`[7]
+    }, error = function(e) { NA })
+    
+    if (!is.na(p_value) && p_value < alpha) {
+      significant_results <- significant_results + 1
+    }
+  }
+  significant_results / nsim
+})
+
+# Store results
+power_curve_data_acc <- tibble(n_subjects = sample_sizes, power = power_results_acc)
+```
+
+# Results
+
+### Accuracy Power Analysis Results
+
+```{r acc_results_table, echo=FALSE, results='asis'}
+if (exists("power_curve_data_acc")) {
+  cat("\n#### Power Curve Results for Accuracy\n\n")
+  print(knitr::kable(power_curve_data_acc, caption = "Simulated Power by Sample Size for Accuracy"))
+  
+  required_n_acc <- power_curve_data_acc %>%
+    filter(power >= 0.80) %>%
+    slice_min(n_subjects, n = 1) %>%
+    pull(n_subjects)
+  
+  if (length(required_n_acc) > 0) {
+    cat(paste0("\n**Required sample size (N) for 80% power (Accuracy) is approximately: ", required_n_acc, "**\n\n"))
+  } else {
+    cat("\n**Required sample size for 80% power (Accuracy) was not reached within the tested range.**\n")
+  }
+}
+```
+
+## Step 3: Power Simulation for Response Time (RT)
+
+```{r power_simulation_rt, cache=TRUE}
+# Simulation Parameters
+sd_rt <- 250
+# Other parameters reused
+
+# Run the simulation loop
+power_results_rt <- sapply(sample_sizes, function(n) {
+  significant_results <- 0
+  for (i in 1:nsim) {
+    sim_data <- tibble(
+      id = factor(rep(1:n, each = 18)),
+      sound = factor(rep(c("Looming", "Stationary", "No_Sound"), each = 6, times = n)),
+      location = factor(rep(c("Center", "Periphery"), each = 3, times = 3 * n)),
+      difficulty = factor(rep(c("Easy", "Medium", "Hard"), times = 6 * n)),
+      rt = rnorm(n * 18, mean = rep(mu_vector_rt, times = n), sd = sd_rt)
+    )
+    
+    # Use a stable model and tryCatch to handle any errors
+    p_value <- tryCatch({
+      model_anova <- suppressMessages(aov_4(rt ~ sound * location * difficulty + (1 | id), data = sim_data))
+      summary(model_anova)$anova_table$`Pr(>F)`[7]
+    }, error = function(e) { NA })
+    
+    if (!is.na(p_value) && p_value < alpha) {
+      significant_results <- significant_results + 1
+    }
+  }
+  significant_results / nsim
+})
+
+# Store results
+power_curve_data_rt <- tibble(n_subjects = sample_sizes, power = power_results_rt)
+```
+
+### Response Time (RT) Power Analysis Results
+
+```{r rt_results_table, echo=FALSE, results='asis'}
+if (exists("power_curve_data_rt")) {
+  cat("\n#### Power Curve Results for Response Time\n\n")
+  print(knitr::kable(power_curve_data_rt, caption = "Simulated Power by Sample Size for RT"))
+
+  required_n_rt <- power_curve_data_rt %>%
+    filter(power >= 0.80) %>%
+    slice_min(n_subjects, n = 1) %>%
+    pull(n_subjects)
+  
+  if (length(required_n_rt) > 0) {
+    cat(paste0("\n**Required sample size (N) for 80% power (RT) is approximately: ", required_n_rt, "**\n\n"))
+  } else {
+    cat("\n**Required sample size for 80% power (RT) was not reached within the tested range.**\n")
+  }
+}
+```
+
+## Step 4: Plotting the Power Curves
+
+```{r plot_power_curves, echo=FALSE, fig.cap="Power curves for Accuracy and Response Time"}
+power_curve_data_acc$dv <- "Accuracy"
+power_curve_data_rt$dv <- "Response Time"
+
+combined_power_data <- bind_rows(power_curve_data_acc, power_curve_data_rt)
+
+ggplot(combined_power_data, aes(x = n_subjects, y = power, color = dv)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(
+    title = "A Priori Power Analysis",
+    subtitle = "Power to Detect a 3-Way Interaction Effect",
+    x = "Sample Size (N)",
+    y = "Statistical Power",
+    color = "Dependent Variable"
+  ) +
+  theme_minimal()
+```

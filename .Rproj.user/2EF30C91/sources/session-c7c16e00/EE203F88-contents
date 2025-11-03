@@ -1,0 +1,987 @@
+# Testing data from our Orientation-Contrast Experiment, F23 - S24
+# Made by Patrick Seebold, pcseebol@ncsu.edu, 3/12/24 - last updated 9/12/24
+
+# install all packages that are not already installed
+if(!require("tidyverse")) install.packages("tidyverse") # general good practice
+if(!require("readxl")) install.packages("readxl") # to open data
+if(!require("plyr")) install.packages("plyr") # data manipulation; a life saver
+if(!require("ggplot2")) install.packages("ggplot2") # plotting
+if(!require("lme4")) install.packages("lme4") # LME SOP - for preliminary analysis here
+if(!require("lmerTest")) install.packages("lmerTest") # auto computes LME p-values 
+if(!require("multcomp")) install.packages("multcomp") # post hoc comparison
+if(!require("car")) install.packages("car") # Anova() (Type III)
+if(!require("emmeans")) install.packages("emmeans") #  post hoc analyses
+
+setwd("C:/Users/pcsee/OneDrive/Desktop/Data-Analysis/Orientation_Contrast_V1_F23")
+
+# open data from excel using readxl command, 'read_excel()'
+data = read_excel('ori_con_full.xlsx')
+
+###### Sanity check ########
+head(data)
+summary(data)
+
+# some variables need to be renamed
+colnames(data)  
+colnames(data)[1]="id" 
+colnames(data)[5]="sound"
+colnames(data)[9]="sig_str"
+colnames(data)[11]="correct"
+
+# remove the practice trials - no need to analyze them
+data = subset(data, data$sound!='placeholder')
+
+#checking the completeness of data and any potential recording errors
+with(data, table(id, sound))
+with(data,table(task_type, sig_str)) # note that orientation sig_strs are linear, contrast are logarithmic
+with(data, table(id, stimulus_direction)) # Ori and Con sig_strs cover range of ~chance to pretty easy, but no direct mapping between them
+with(data, table(stimulus_direction, task_type, sound))
+
+
+# remove the trouble makers from the data - to visualize these participants,
+# SKIP THE SUBSET() CODE below, clean the data, and plot the graphs. 
+
+# We take out any participants with chance level performance 
+# so long as their curves show marked improvement over the chance level condition
+data = subset(data, data$id != 1) # participant 1 is a strange outlier - removed for ~76% acc at chance contrast lvl
+data = subset(data, data$id != 4)
+data = subset(data, data$id != 6)
+data = subset(data, data$id != 7)
+data = subset(data, data$id != 10)
+data = subset(data, data$id != 11)
+data = subset(data, data$id != 12)
+data = subset(data, data$id != 21)
+data = subset(data, data$id != 22)
+data = subset(data, data$id != 27)
+data = subset(data, data$id != 28)
+
+
+# We want to clean out trials that are too short or too long
+# visualize the rt for data - we have some extreme outliers here
+hist(data$response_time)
+
+# examine the percentiles of the data
+percentiles = quantile(data$response_time, probs = seq(.001, .999, by = .001)) 
+percentiles
+
+# we can't take off 3 SD below mean, so log transform to clean the data
+data$RT_log = log(data$response_time)
+histo = hist(data$RT_log)
+
+# we remove upper values that are more than 3 SD above the mean.
+sd = sd(data$RT_log)
+mean = mean(data$RT_log)
+
+# remove outliers - rt faster than 61.99, slower than 2029.018
+data = subset(data, RT_log > (mean - 3*sd) & RT_log < (mean + 3*sd))
+
+# visualize the rt for data and mean of the cleaned data
+mean(data$response_time)
+sd(data$response_time)
+hist(data$response_time) # now our distribution looks much healthier
+
+# Split data by task type and check summary stats
+con_data = subset(data, data$task_type == 'contrast') 
+ori_data = subset(data, data$task_type == 'orientation') 
+
+
+
+# Cleaned Acc and Rt data Summary ####
+ddply(con_data, .(sound), summarize, accuracy = mean(correct), RT = mean(response_time))
+ddply(ori_data, .(sound), summarize, accuracy = mean(correct), RT = mean(response_time))
+ddply(con_data, .(sig_str), summarize, accuracy = mean(correct), RT = mean(response_time))
+ddply(ori_data, .(sig_str), summarize, accuracy = mean(correct), RT = mean(response_time))
+
+# now we plot the curves by person 
+# NOTE: this is where we can visualize whether a participant performed at chance.
+# If a participant did NOT improve across sig_str, we remove them. After removing, clear environment and rerun
+
+# first, prep new dfs based on the task type for ease of graphing
+con_graph = ddply(con_data, .(id,sig_str), summarize, accuracy = mean(correct), RT = mean(response_time))
+ori_graph = ddply(ori_data, .(id,sig_str), summarize, accuracy = mean(correct), RT = mean(response_time))
+
+# graph the orientation performance of each participant
+# problem children for orientation:
+# 4, 6, 7, 11, 12, 21, 28
+ori_acc_avg = ggplot(ori_graph, aes(x = sig_str, y = accuracy)) +
+         geom_line() +
+         geom_point() +
+         facet_wrap(~id) +
+         labs(
+           title = "Orientation",
+           x = "sig_str",
+           y = "Accuracy"
+         ) +
+         theme_minimal()
+ori_acc_avg
+#ggsave("Orientation_Accuracy_by_Participant.png", 
+#       plot = ori_acc_avg,
+#       path = "plots", 
+#       width = 10,
+#       height = 6,
+#       dpi = 300, 
+#       bg = 'white')
+#total rejections: 4, 6, 7, 10, 11, 12, 21, 22, 27, 28
+#only failed one test: 10, 12, 27, 28
+
+# graph the contrast performance of each participant
+# problem children for contrast:
+# 4, 6, 7, 10, 11, 21, 22, 27
+con_acc_avg = ggplot(con_graph, aes(x = sig_str, y = accuracy)) +
+           geom_line() +
+           geom_point() +
+           facet_wrap(~id)+
+           scale_x_log10() +
+           labs(
+           title = "Contrast",
+           x = "sig_str",
+           y = "Accuracy"
+         ) +
+           theme_minimal()
+con_acc_avg
+#ggsave("Contrast_Accuracy_by_Participant.png", 
+#       plot = con_acc_avg,
+#       path = "plots", 
+#       width = 10,
+#       height = 6,
+#       dpi = 300,
+#       bg = 'white')
+
+
+
+# Orientation task LMEs - preliminary analysis####
+# this is included for preliminary data - the full analysis is more involved and is below
+ori_lme_data = ddply(ori_data, .(id, sound, sig_str), summarise, accuracy = mean(correct), RT = mean(response_time)) # computing mean
+ori_lme_data = ddply(ori_lme_data, .(id, sig_str), transform, baseAcc = mean(accuracy[sound==-1]), baseRT = mean(RT[sound==-1]))
+ori_lme_data$difAcc = ori_lme_data$accuracy - ori_lme_data$baseAcc
+ori_lme_data$difRT = ori_lme_data$RT - ori_lme_data$baseRT
+
+RT.lme.ori = lmer(difRT ~ sound + (1|id), data = ori_lme_data)
+summary(RT.lme.ori)
+
+acc.lme.ori = lmer(difAcc ~ sound + (1|id), data = ori_lme_data)
+summary(acc.lme.ori)
+
+
+# visualize orientation accuracy by sound conditions over orientation levels per person
+ori_acc_by_sound = ggplot(ori_lme_data, aes(x = sig_str, y = accuracy, color = sound)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~id)+
+  labs(title = "Orientation",
+       x = "sig_str",
+       y = "Accuracy") +
+  theme_minimal() 
+ori_acc_by_sound
+#ggsave("individual_orientation_accuracy_by_sound.png",
+#       plot = ori_acc_by_sound,
+#       path = "plots",
+#       width = 10,
+#       height = 6,
+#       dpi = 300,
+#       bg = 'white')
+
+
+# Set up data frames for graphing averages
+# first we need to get the data into a useful form, with mean and baseline by sound condition
+cdata = ddply(data, .(id, sound, sig_str, task_type), summarise, accuracy = mean(correct), RT = mean(response_time)) # computing mean
+
+# we establish baseline acc and rt across sounds for ORIENTATION
+cdata_o = subset(cdata, cdata$task_type == 'orientation') 
+cdata_o = ddply(cdata_o, .(id, sig_str), transform, baseAcc = mean(accuracy[sound==-1]), baseRT = mean(RT[sound==-1])) # assigning baseline
+cdata_o_sum = ddply(cdata_o, .(sig_str,sound), summarise, acc = mean(accuracy), RT = mean(RT)) # assigning baseline
+
+# we establish baseline acc and rt across sounds for CONTRAST
+cdata_c = subset(cdata, cdata$task_type == 'contrast') 
+cdata_c = ddply(cdata_c, .(id, sig_str), transform, baseAcc = mean(accuracy[sound==-1]), baseRT = mean(RT[sound==-1])) # assigning baseline
+cdata_c_sum = ddply(cdata_c, .(sig_str,sound), summarise, acc = mean(accuracy), RT = mean(RT)) # assigning baseline
+
+# graph the average orientation performance accuracy
+ori_acc_avg_by_sound = ggplot(cdata_o_sum, aes(x = sig_str, y = acc)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~sound) + # note our sig_str for orientation is linear, so no x-scaling
+  labs(
+    title = "Orientation",
+    x = "sig_str",
+    y = "Accuracy"
+  ) +
+  theme(strip.text.x = element_text(margin = margin(0, 0, 0, 0)))
+ori_acc_avg_by_sound
+#ggsave("Orientation_AvgAccuracy_by_Sound.png",
+#       plot = ori_acc_avg_by_sound,
+#       path = "plots",
+#       width = 10,
+#       height = 6,
+#       dpi = 300,
+#       bg = "white")
+# Orientation average RT by sound
+ori_RT_avg_by_sound = ggplot(cdata_o_sum, aes(x = sig_str, y = RT)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~sound) + # note our sig_str for orientation is linear, so no x-scaling
+  labs(
+    title = "Orientation",
+    x = "sig_str",
+    y = "RT"
+  ) +
+  theme(strip.text.x = element_text(margin = margin(0, 0, 0, 0)))
+ori_RT_avg_by_sound
+#ggsave("Orientation_AvgRT_by_Sound.png",
+#       plot = ori_RT_avg_by_sound,
+#       path = "plots",
+#       width = 10,
+#       height = 6,
+#       dpi = 300,
+#       bg = "white")
+
+# Plot the average accuracy for contrast
+con_acc_avg_by_sound = ggplot(cdata_c_sum, aes(x = sig_str, y = acc)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~sound) +
+  scale_x_log10() + # this is on a log scale so we adjust our x-axis
+  labs(title = "Contrast",
+    x = "sig_str",
+    y = "Accuracy") 
+con_acc_avg_by_sound
+#ggsave("Contrast_AvgAcc_by_Sound.png",
+#       plot = con_acc_avg_by_sound,
+#       path = "plots",
+#       width = 10,
+#       height = 6,
+#       dpi = 300,
+#       bg = "white")
+
+# Plot the average RT for contrast
+con_RT_avg_by_sound = ggplot(cdata_c_sum, aes(x = sig_str, y = RT)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~sound) +
+  scale_x_log10() + # this is on a log scale so we adjust our x-axis
+  labs(title = "Contrast",
+       x = "sig_str",
+       y = "RT") 
+con_RT_avg_by_sound
+#ggsave("Contrast_AvgRT_by_Sound.png",
+#       plot = con_RT_avg_by_sound,
+#       path = "plots",
+#       width = 10,
+#       height = 6,
+#       dpi = 300,
+#       bg = "white")
+
+
+
+# D Prime Data Prep ####
+# Note that participant id must be included for analysis, but excluded for visualizations
+# Switch comments between ddply() options to include or exclude as needed
+
+# We calculate hits, false alarms, and number of trials for each id, sound, sig_str
+data_d = ddply(data, # Updated on 9/21/24
+               .(id, task_type, sound, sig_str), # include id to do analysis!
+               summarise,
+               ntrials = length(correct),
+               acc = mean(correct),
+               hit = mean(correct[stimulus_direction==1]),
+               fa = 1 - mean(correct[stimulus_direction==2]),
+               validation = (hit+1-fa)/2)  # This should equal to acc
+
+# set the upper thresholds using method by Stainislaw & Todorov (1999)
+lower_threshold = 0.017
+upper_threshold = 0.983
+data_d$acc = pmax(pmin(data_d$acc, upper_threshold), lower_threshold)
+data_d$hit = pmax(pmin(data_d$hit, upper_threshold), lower_threshold)
+data_d$fa = pmax(pmin(data_d$fa, upper_threshold), lower_threshold)
+
+
+# Now we can manually calculate our d' scores for each row
+#data_d$result_old <- qnorm(data_d$acc) - qnorm(1 - data_d$acc) # from prior version of code w/ mistake
+data_d$result <- qnorm(data_d$hit) - qnorm(data_d$fa)
+
+# We summarize d' scores for a given vis, sound, task per participant (adding participant for MLM)
+data_d = ddply(data_d,  .(id, task_type, sound, sig_str),
+               summarise, avg_d = mean(result))
+
+head(data_d)
+data_d = data_d %>%
+  mutate(sig_str = case_when(
+    task_type == 'contrast' & sig_str == 4 ~ 3, # for ease of plotting, we apply linear x axis to contrast
+    task_type == 'contrast' & sig_str == 8 ~ 4, # these plots result in same visuals as if we log_transformed
+    task_type == 'contrast' & sig_str == 16 ~ 5, # but allows us to plot in the same call as orientation
+    TRUE ~ sig_str  # Keeps the original value for all other conditions
+  ))
+
+# Now calculate the chance in d' associated with sounds
+data_d = ddply(data_d,  .(id, task_type, sig_str),
+               transform, baseline_d = avg_d[sound == -1])
+
+data_d$dif_d <- data_d$avg_d - data_d$baseline_d
+
+# calcualte for each individual first
+data_d_descriptive = ddply(data_d, .(id, sound, task_type), summarize, dif_d = mean(dif_d), avg_d = mean(avg_d))
+
+# now average across each condition and get SEM = sd/n
+data_d_descriptive = ddply(data_d_descriptive, .(sound, task_type), summarize, dif_d_sem = sd(dif_d)/sqrt(16),
+                                                                               dif_d = mean(dif_d),
+                                                                               avg_d_sem = sd(avg_d)/sqrt(16),
+                                                                               avg_d = mean(avg_d))
+data_d_descriptive_df = data.frame(data_d_descriptive)
+
+d_prime_plot = ddply(data_d, .(sound,task_type,sig_str), summarize, avg_d = mean(avg_d), dif_d = mean(dif_d))
+
+# D' Plots####          
+# NOTE: to run these plots you need to have EXCLUDED the id variable when creating the data_d above
+d_prime_scores = ggplot(d_prime_plot, aes(x = sig_str, y = avg_d, color = sound, linetype = sound, shape = sound)) + 
+  geom_line(linewidth = 1) +  # Add line to connect points
+  geom_point(size = 3) +  # Add points to represent actual d' scores
+  facet_wrap(~ task_type) +  # Create separate panels for each sound condition
+  labs(
+    x = "Signal Strength",
+    y = "Average d' Score"
+  ) +
+  scale_color_manual(values = c("red", "blue", "darkgreen"),
+                     name = "Sound",
+                     labels = c("None", "Stationary", "Looming"))+
+  scale_linetype_manual(values = c("solid", "dotted", "twodash"),
+                        name = "Sound",
+                        labels = c("None", "Stationary", "Looming")) +
+  scale_shape_manual(values = c(1, 16, 17),
+                     name = "Sound",
+                     labels = c("None", "Stationary", "Looming")) +
+  theme_minimal(base_size = 12) 
+d_prime_scores
+#ggsave("updated_dprime_scores.png", # we comment this out so we don't override our plots
+#       plot = d_prime_scores,
+#       path = "plots", 
+#       width = 6,
+#       height = 3,
+#       dpi = 600,
+#       bg = 'white')
+
+# The negative d prime score means that participants performed WORSE than chance
+# This should happen some times due to sampling error, and in our case, the small
+# average negative value is likely an artifact of our sample size
+
+# We can plot the difference in d' scores from sounds across tasks
+dprime_differences = ggplot(d_prime_plot, aes(x = sig_str, y = dif_d, color = sound)) + 
+  geom_line() +  # Add line to connect points
+  geom_point() +  # Add points to represent actual d' scores
+  facet_wrap(~ task_type) +  
+  labs(
+    title = "Change in Difference in D' Across Sounds",
+    x = "Sound Condition",
+    y = "Average D' Score"
+  ) +
+  theme_minimal() 
+dprime_differences
+#ggsave("dprime_differences.png", # commented out since we need to remove 'id' from d_data to get effective plots,
+#       plot = dprime_differences,   # but need to include 'id' for the analysis. 
+#       path = "plots", 
+#       width = 10,
+#       height = 6,
+#       dpi = 600,
+#       bg = 'white')
+
+# These next graphs plot the same things by sound facet_wrap
+d_prime_scores_by_sound = ggplot(d_prime_plot, aes(x = sig_str, y = avg_d, color = task_type)) + 
+  geom_line() +  # Add line to connect points
+  geom_point() +  # Add points to represent actual d' scores
+  facet_wrap(~ sound) +  # Create separate panels for each sound condition
+  labs(
+    title = "Average d' Across Sounds",
+    x = "Visual Condition",
+    y = "Average D' Score"
+  ) +
+  theme_minimal() 
+#ggsave("dprime_by_sounds.png", # we comment this out so we don't override our plots
+#       plot = d_prime_scores_by_sound,
+#       path = "plots", 
+#       width = 10,
+#       height = 6,
+#       dpi = 600,
+#       bg = 'white')
+
+# And then differences
+dprime_differences_by_sound = ggplot(d_prime_plot, aes(x = sig_str, y = dif_d, color = task_type)) + 
+  geom_line() +  # Add line to connect points
+  geom_point() +  # Add points to represent actual d' scores
+  facet_wrap(~ sound) +  # Create separate panels for each sound condition
+  labs(
+    title = "Change in Difference in D' Across Sounds",
+    x = "Sound Condition",
+    y = "Average D' Score"
+  ) +
+  theme_minimal() 
+#ggsave("dprime_differences_by_sound.png", # commented out since we need to remove 'id' from d_data to get effective plots,
+#       plot = dprime_differences_by_sound,   # but need to include 'id' for the analysis. 
+#       path = "plots", 
+#       width = 10,
+#       height = 6,
+#       dpi = 600,
+#       bg = 'white')
+
+
+
+# D Prime Statistical Analysis ####
+# Now we compare whether sound impacts tasks differently! We will use ANOVA for this
+data_d$task_type= as.factor(data_d$task_type)
+data_d$sound= as.factor(data_d$sound)
+data_d$sig_str = as.factor(data_d$sig_str)
+
+
+# data_d has both tasks, data_do has orientation, data_dc has contrast
+data_d_ns = subset(data_d, data_d$sound != -1)
+data_d_ns = droplevels(data_d_ns) # we drop levels so our removed subset don't impact analysis
+drop = c(".id") # remove unneeded column
+data_d_ns = data_d_ns[,!(names(data_d_ns) %in% drop)]
+
+data_do = subset(data_d_ns, data_d$task_type == 'orientation')
+data_dc = subset(data_d_ns, data_d$task_type == 'contrast')
+
+# we need to collapse across various rows to make sure we have right DFs
+data_d_final = data_d_ns %>%
+  dplyr::select(-avg_d, -baseline_d)
+
+# testing if taking avg of sig_str would impact our earlier analysis when sig_str was excluded
+data_d_main = ddply(data_d_final, .(id, sound, task_type), summarize, dif_d = mean(dif_d))
+# We see that this DOES change the outcome... even after setting our comparison
+# appropriately. This is something to be careful of in the future. Luckily, here
+# we want to compare sig_str in our analysis as well, so we do not need to 
+# worry about this!
+
+# set contra.sum so we can compare against mean values
+contrasts(data_d_final$task_type) = contr.sum(levels(data_d_final$task_type))
+contrasts(data_d_final$sound) = contr.sum(levels(data_d_final$sound))
+contrasts(data_d_final$sig_str) = contr.sum(levels(data_d_final$sig_str))
+
+contrasts(data_d_main$task_type) = contr.sum(levels(data_d_main$task_type))
+contrasts(data_d_main$sound) = contr.sum(levels(data_d_main$sound))
+
+# This is the MAIN model which we ran our power analysis
+anova_dif_d = lmer(dif_d ~ sound*task_type + (1|id), data = data_d_main)
+summary(anova_dif_d)
+Anova(anova_dif_d, type="III", test.statistic="F")
+
+# This is our exploratory model which shows sig_str does NOT impact model performance
+anova_dif_d_exp = lmer(dif_d ~ sound*task_type*sig_str + (1|id), data = data_d_final)
+summary(anova_dif_d_exp)
+Anova(anova_dif_d_exp, type="III", test.statistic="F")
+
+# post-hoc for sig_str model
+emm = emmeans(anova_dif_d_exp, ~ task_type*sig_str)
+pairs(emm, adjust = "bonferroni")
+
+
+#  No post-hoc is needed. We can check the average change in d' to see which of 
+# the two tasks is effected the most
+cmean = mean(data_do$dif_d, na.rm = TRUE)
+omean = mean(data_dc$dif_d, na.rm = TRUE)
+
+cmean
+omean
+# We see that the dif_d for contrast is higher than orientation, so we can conclude
+# that contrast is seeing a larger improvement from sounds than orientation
+
+
+# RT analysis####
+# make a df for rt analysis 
+datar = ddply(data, .(id, sound, task_type), summarize, RT = mean(response_time))
+
+# now need to find the change in RT based on sound. First, grab baseline when there is no sound
+baseline_RT = datar %>%
+  filter(sound == -1) %>%
+  dplyr::select(id, task_type, RT) %>%
+  distinct() %>%
+  dplyr::rename(base_RT = RT)
+
+#Now we join that df to our main df 
+datar = datar %>%
+  left_join(baseline_RT, by = c("id", "task_type"))
+
+# Now calculate the chance in d' associated with sounds
+datar = ddply(datar, .(), transform, dif_RT = RT - base_RT)
+
+# drop the no sound condition so we can run our model
+# data_d has both tasks, data_do has orientation, data_dc has contrast
+datar_ns = subset(datar, datar$sound != -1)
+datar_ns = droplevels(datar_ns) # drop levels to update comparisons in model
+drop = c(".id") # remove unneeded column
+datar_ns =datar_ns[,!(names(datar_ns) %in% drop)]
+
+# specify that these levels are factors
+datar_ns$sound = as.factor(datar_ns$sound)
+datar_ns$task_type = as.factor(datar_ns$task_type)
+
+# As before, specify that we want to comapre against the average level as baseline
+# set contra.sum so we can compare against mean values
+contrasts(datar_ns$task_type) = contr.sum(levels(datar_ns$task_type))
+contrasts(datar_ns$sound) = contr.sum(levels(datar_ns$sound))
+
+anova_dif_rt = lmer(dif_RT ~ sound*task_type + (1|id), data = datar_ns)
+Anova(anova_dif_rt, type ="III", test.statistic= "F")
+
+# This significant intercept indicates that there is a significant improvement in RT
+# when a sound is present vs when no sound is present. The effect of a sound is not 
+# different between our task types, or between type of sound
+
+
+# Now let's run an analysis on raw RT to see if those vary
+datarc = subset(datar, datar$task_type == "contrast")
+dataro = subset(datar, datar$task_type == "orientation")
+
+c_dif_rt = mean(dataro$dif_RT, na.rm = TRUE)
+o_dif_rt = mean(datarc$dif_RT, na.rm = TRUE)
+
+o_dif_rt
+c_dif_rt
+
+# repeat but check the raw rt instead of dif
+anova_rt_raw = lmer(RT ~ sound*task_type + (1|id), data = datar_ns)
+Anova(anova_rt_raw, type ="III", test.statistic= "F")
+
+# Here, the significant effect of task indicates that there is a difference
+# between the ori and con tasks in terms of how fast people completed them
+# (contrast took longer). The intercept isn't interpretable on this model
+
+o_raw_rt = mean(dataro$RT, na.rm = TRUE)
+c_raw_rt = mean(datarc$RT, na.rm = TRUE)
+o_raw_rt
+c_raw_rt
+
+# between these, we see that the raw resposne times are faster for orientation than contrast,
+# and that having a sound improves resposne time, but there is no difference between task
+# type! Improvement in RT also doesn't depend on whether looming or stationary tone
+
+
+# RT checkup####
+# curious to check up on the data after removing the RT outliers earlier in the doc
+# checking the completeness of data and any potential recording errors
+with(data, table(id, sound))
+with(data,table(task_type, sig_str)) # note that orientation sig_strs are linear, contrast are logarithmic
+with(data, table(id, stimulus_direction)) # Ori and Con sig_strs cover range of ~chance to pretty easy, but no direct mapping between them
+with(data, table(stimulus_direction, task_type, sound))
+with(data, table(task_type))
+# run a chi-square to see if frequency data is different
+data$no = 1
+table_rt = table(data$task_type, data$no)
+chi_rt = chisq.test(table_rt)
+print(chi_rt)
+
+# so there is no difference in the number of trials remaining after removing RT outliers for task type
+rt_mean_con = mean(data$response_time[data$task_type == "contrast"])
+rt_mean_ori = mean(data$response_time[data$task_type == "orientation"])
+
+# how about for the reaction times in the basic data, instead of difference?
+basic_rt_test = t.test(data$response_time[data$task_type == "contrast"], data$response_time[data$task_type == "orientation"])
+print(basic_rt_test)
+
+
+
+# Plotting to see if there is a ceiling effect or truly a difference in improvement across task types####
+data_d_ns
+data_dprime_by_dprime_dif_plot = ddply(data_d_ns, .(task_type,id), summarize, d = mean(avg_d), d_change = mean(dif_d))
+
+dprime_by_dif_dprime = ggplot(data_dprime_by_dprime_dif_plot, aes(x = d, y = d_change, color = task_type)) + 
+  geom_point() + 
+  stat_smooth(method = "lm", se = FALSE) + # Add fitted line to connect points
+  #geom_line() +     # add connecting line
+  #geom_point() +  # Add points to represent actual d' scores
+ # facet_wrap(~ task_type) +  # Create separate panels for each sound condition
+  labs(
+    title = "d' by Change in d' across Tasks",
+    x = "d'",
+    y = "d' change"
+  ) +
+  theme_minimal()  # Use a minimal theme for a cleaner look
+dprime_by_dif_dprime
+
+# Analysis to see if the difference in slopes is significant ####
+# This was an earlier attempt to determine if difficulty was matched - we changed this to sig_str ANOVA 
+contrasts(data_dprime_by_dprime_dif_plot$task_type) = contr.sum(levels(data_dprime_by_dprime_dif_plot$task_type))
+interaction_anova = lmer(d_change ~ task_type*d + (1|id), data = data_dprime_by_dprime_dif_plot)
+summary(interaction_anova)
+Anova(interaction_anova, type="III", test.statistic="F")
+
+# test if the slope of the orientation task is different from zero
+data_dprime_by_dprime_dif_plot_o =  data_dprime_by_dprime_dif_plot[data_dprime_by_dprime_dif_plot$task_type == "orientation", ]
+ori_slope_model = lm(d ~ d_change, data = data_dprime_by_dprime_dif_plot_o)
+summary(ori_slope_model)
+
+# test if the slope of the contrast task is different from zero
+data_dprime_by_dprime_dif_plot_c =  data_dprime_by_dprime_dif_plot[data_dprime_by_dprime_dif_plot$task_type == "contrast", ]
+con_slope_model = lm(d ~ d_change, data = data_dprime_by_dprime_dif_plot_c)
+summary(con_slope_model)
+
+
+
+#Repeating this analysis on the original Contrast Data####
+# as a supplementary analysis, let's run the d' analysis on the original contrast data
+# and see if it compares 
+data2 = read_excel('PreviousStudy_Full_Data_CS_F2022.xlsx')
+
+# some variables need to be renamed
+colnames(data2)  
+colnames(data2)[1]="id" 
+colnames(data2)[3]="sound"
+colnames(data2)[4]="trial"
+colnames(data2)[7]="sig_str"
+colnames(data2)[9]="correct"
+colnames(data2)[10]="RT"
+
+# Use this for 450 trials only to better compare with Study II; comment out for all trials
+#data2 = subset(data2,data2$trial %in% 1:450)
+
+#checking the completeness of data and any potential recording errors
+with(data2, table(id, sound))
+with(data2, table(id, stimulus_direction)) # Ori and Con sig_strs cover range of ~chance to pretty easy, but no direct mapping between them
+
+# remove participants who we removed last time - no need to double check performance
+data2 = subset(data2, data2$id != 6
+                         & data2$id != 13
+                         & data2$id != 14
+                         & data2$id != 15
+                         & data2$id != 18
+                         & data2$id != 19
+                         & data2$id != 21
+                         & data2$id != 22
+                         & data2$id != 23
+                         & data2$id != 26)
+data2
+
+
+# We want to clean out trials that are too short or too long
+# visualize the rt for data - we have some extreme outliers here
+hist(data$response_time)
+
+# we can't take off 3 SD below mean, so log transform to clean the data
+data2$RT_log = log(data2$RT)
+hist(data2$RT_log)
+
+# we remove upper values that are more than 3 SD above the mean.
+sd = sd(data2$RT_log)
+mean = mean(data2$RT_log)
+
+# remove outliers - rt faster than 61.99, slower than 2029.018
+data2 = subset(data2, RT_log > (mean - 3*sd) & RT_log < (mean + 3*sd))
+
+# visualize the rt for data2 and mean of the cleaned data2
+mean(data2$RT)
+sd(data2$RT)
+hist(data2$RT) # now our distribution looks much healthier
+
+# Cleaned Acc and Rt data2 Summary ####
+ddply(data2, .(sound), summarize, accuracy = mean(correct), RT = mean(RT))
+ddply(data2, .(sig_str), summarize, accuracy = mean(correct), RT = mean(RT))
+
+# Prior Study Data: D Prime Data Prep ####
+# Note that participant id must be included for analysis, but excluded for visualizations
+# Swtich comments between ddply() options to include or exclude as needed
+
+# We calculate hits, false alarms, and number of trials for each id, sound, sig_str
+# We calculate hits, false alarms, and number of trials for each id, sound, sig_str
+data2_d = ddply(data2, # Updated on 9/21/24
+               .(id, sound, sig_str), # include id to do analysis!
+               summarise,
+               ntrials = length(correct),
+               acc = mean(correct),
+               hit = mean(correct[stimulus_direction==0]),
+               fa = 1 - mean(correct[stimulus_direction==1]),
+               validation = (hit+1-fa)/2)  # This should equal to acc
+
+# set the upper thresholds using method by Stainislaw & Todorov (1999)
+lower_threshold = 0.017
+upper_threshold = 0.983
+data2_d$acc = pmax(pmin(data2_d$acc, upper_threshold), lower_threshold)
+data2_d$hit = pmax(pmin(data2_d$hit, upper_threshold), lower_threshold)
+data2_d$fa = pmax(pmin(data2_d$fa, upper_threshold), lower_threshold)
+
+
+# Now we can manually calculate our d' scores for each row
+#data2_d$result <- qnorm(data2_d$acc) - qnorm(1 - data2_d$acc) # from prior version of code w/ mistake
+data2_d$result <- qnorm(data2_d$hit) - qnorm(data2_d$fa) # new data
+
+# We summarize d' scores for a given vis, sound, task per participant (adding participant for MLM)
+data2_d = ddply(data2_d,  .(id, sound, sig_str),
+               summarise, avg_d = mean(result))
+
+head(data2_d)
+data2_d = data2_d %>%
+  mutate(sig_str = case_when(
+    sig_str == 4 ~ 3, # for ease of plotting, we apply linear x axis to contrast
+    sig_str == 8 ~ 4, # these plots result in same visuals as if we log_transformed
+    sig_str == 16 ~ 5, # but allows us to plot in the same call as orientation
+    TRUE ~ sig_str  # Keeps the original value for all other conditions
+  ))
+
+# Now calculate the chance in d' associated with sounds
+data2_d = ddply(data2_d,  .(id, sig_str),
+               transform, baseline_d = avg_d[sound == -1])
+
+data2_d$dif_d <- data2_d$avg_d - data2_d$baseline_d
+
+data2_d_descriptive = ddply(data2_d, .(sound), summarize, dif_d = mean(dif_d), avg_d = mean(avg_d))
+data2_d_descriptive
+
+data2_d_plot = ddply(data2_d, .(sig_str, sound), summarize, avg_d = mean(avg_d))
+data2_d_plot = subset(data2_d_plot, sound  %in% c(-1,1,32))
+data2_d_plot$sound = as.factor(data2_d_plot$sound)
+
+# D' Plots####          
+# Plot the d' scores by sound
+d_prime_scores_ContrastOnlyStudy = ggplot(data2_d_plot, aes(x = sig_str, y = avg_d, color = sound, line = sound, shape = sound)) + 
+  geom_line(linewidth = 1) +  # Add line to connect points
+  geom_point(size =3) +  # Add points to represent actual d' scores
+  #facet_wrap(~ task_type) +
+  labs(
+    x = "Visual Signal Strength",
+    y = "Average D' Score"
+  ) +
+  scale_color_manual(values = c("red", "blue", "darkgreen"),
+                     name = "Sound",
+                     labels = c("No Sound", "Stationary", "Looming"))+
+  scale_linetype_manual(values = c(1, 2, 3),
+                        name = "Sound",
+                        labels = c("No Sound", "Stationary", "Looming")) +
+  scale_shape_manual(values = c(1, 16, 17),
+                     name = "Sound",
+                     labels = c("No Sound", "Stationary", "Looming")) +
+  theme_minimal(base_size = 12)
+  theme_minimal() 
+#ggsave("dprime_scores_ContrastOnlyStudy.png", # we comment this out so we don't override our plots
+#       plot = d_prime_scores_ContrastOnlyStudy,
+#       path = "plots", 
+#       width = 10,
+#       height = 6,
+#       dpi = 600,
+#       bg = 'white')
+
+
+# D Prime Statistical Analysis for Contrast-Only ####
+# Now we explore the results from the contrast-onlt study!
+data2_d$sound= as.factor(data2_d$sound)
+data2_d$sig_str = as.factor(data2_d$sig_str)
+
+# data2_d has both tasks, data2_do has orientation, data2_dc has contrast
+data2_d_ns = subset(data2_d, data2_d$sound != -1)
+data2_d_ns = droplevels(data2_d_ns)
+drop = c(".id") # remove unneeded column
+data2_d_ns =data2_d_ns[,!(names(data2_d_ns) %in% drop)]
+
+# don't forget to collapse our unnecessary variables for the one-way, 5-level sound ANOVA
+drop2 = c("avg_d","base_d") # remove unneeded column
+data2_d_main =data2_d_ns[,!(names(data2_d_ns) %in% drop2)]
+data2_d_main = ddply(data2_d_main, .(id, sound), summarize, dif_d = mean(dif_d))
+
+# also set up df for comparing sig_str in contrast only experiment
+data2_d_sigstr = data2_d_ns[,!(names(data2_d_ns) %in% drop2)]
+
+# set contrasts
+contrasts(data2_d_main$sound) = contr.sum(levels(data2_d_main$sound))
+contrasts(data2_d_sigstr$sound) = contr.sum(levels(data2_d_sigstr$sound))
+contrasts(data2_d_sigstr$sig_str) = contr.sum(levels(data2_d_sigstr$sig_str))
+
+# run the model with just sound
+anova2_dif_d_main = lmer(dif_d ~ sound + (1|id), data = data2_d_main)
+summary(anova2_dif_d_main)
+Anova(anova2_dif_d_main, type="III", test.statistic="F")
+
+# same as before, we see an effect of intercept (better performance with sound)
+# than when no sound is available. No effect of type of sound
+# we should plot these and look at the averages by sound group
+
+# Exploratory model with sig_str included
+anova2_dif_d_sigstr = lmer(dif_d ~ sound*sig_str + (1|id), data = data2_d_sigstr)
+summary(anova2_dif_d_sigstr)
+Anova(anova2_dif_d_sigstr, type="III", test.statistic="F")
+
+
+#library('emmeans') # just to take a look at posthoc for sig
+emm = emmeans(anova2_dif_d_sigstr, ~ sig_str)
+pairs(emm, adjust = "bonferroni")
+
+
+# Exploratory analysis into visual level ####
+# This is an exploratory analysis into visual level
+# since sig_str 1,2,3,4,5 in contrast and orientation are NOT matched, we should
+# avoid treating them as one group. So we run separate models for eacfh task
+data_do = subset(data_d_ns, data_d_ns$task_type == 'orientation')
+data_dc = subset(data_d_ns, data_d_ns$task_type == 'contrast')
+
+
+contrasts(data_do$sig_str) = contr.sum(levels(data_do$sig_str))
+contrasts(data_do$task_type) = contr.sum(levels(data_do$task_type))
+
+contrasts(data_dc$sig_str) = contr.sum(levels(data_dc$sig_str))
+contrasts(data_dc$task_type) = contr.sum(levels(data_dc$task_type))
+
+
+anova_avg_d_sig_str_o = lmer(avg_d ~ sig_str + (1|id), data = data_do)
+summary(anova_avg_d_sig_str_o)
+Anova(anova_avg_d_sig_str_o, type="III", test.statistic="F")
+# average d' scores does change based on task and visual level - no surprise here!
+
+anova_dif_d_sig_str_o = lmer(dif_d ~ sig_str + (1|id), data = data_do)
+summary(anova_dif_d_sig_str_o)
+Anova(anova_dif_d_sig_str_o, type="III", test.statistic="F")
+# change in d' scores does NOT change based on task and visual level
+
+# repeat for contrast:
+anova_avg_d_sig_str_c = lmer(avg_d ~ sig_str + (1|id), data = data_dc)
+summary(anova_avg_d_sig_str_c)
+Anova(anova_avg_d_sig_str_c, type="III", test.statistic="F")
+# average d' scores does change based on task and visual level - again, no surprise
+
+anova_dif_d_sig_str_c = lmer(dif_d ~ sig_str + (1|id), data = data_dc)
+summary(anova_dif_d_sig_str_c)
+Anova(anova_dif_d_sig_str_c, type="III", test.statistic="F")
+# change in d' scores does NOT change based on task and visual level
+
+
+
+#### Updated plots for publications: Visualizing Signal Strength & Contrast Only Study####
+data_dc = subset(data_d, data_d$task_type == 'contrast')
+data_dc_sig = ddply(data_dc, .(sig_str, sound), summarise, study_II_d = mean(avg_d))
+
+# let's visualize these to sanity check
+ddply(data_dc, .(sig_str), summarize, dif_d = mean(avg_d))
+ddply(data2_d, .(sig_str), summarise, dif_d = mean(avg_d))
+
+ddply(data_dc, .(sound), summarize, dif_d = mean(avg_d))
+ddply(data2_d, .(sound), summarise, dif_d = mean(avg_d))
+
+data2_d_sig = ddply(data2_d, .(sig_str, sound), summarise, study_I_d = mean(avg_d))
+data2_d_sig = subset(data2_d_sig, sound  %in% c(-1,1,32))
+
+data_sigstr_plot = data_dc_sig
+data_sigstr_plot$study_I_d = data2_d_sig$study_I_d
+data_sigstr_plot = pivot_longer(data_sigstr_plot, cols = c(study_I_d, study_II_d), 
+                        names_to = "study", values_to = "value")
+data_sigstr_plot_s = subset(data_sigstr_plot, sound  %in% c(-1,1))
+data_sigstr_plot_l = subset(data_sigstr_plot, sound  %in% c(-1,32))
+
+data_sigstr_plot_sl # for including all sounds on one plot
+
+# Create the line plot - change _l to _s  in name and data to see stationary vs looming
+sigstr_plot_full = ggplot(data_sigstr_plot, aes(x = sig_str, y = value, linetype = study, color = sound, shape = study, group = interaction(study, sound)))+# color = variable, shape = variable, linetype = variable)) +
+  geom_line(linewidth = 1) +  # Add line to connect points
+  geom_point(size = 3) +  # Add points to represent actual d' scores
+  labs(
+    x = "Signal Strength",
+    y = "Average d' Score"
+  ) +
+  facet_wrap(~sound, labeller = labeller(sound = c('-1' = 'No Sound', '1' = 'Stationary', '32' = 'Looming'))) +
+  scale_color_manual(values = c("red", "blue", "darkgreen"),
+                     name = "Sound",
+                     labels = c("No Sound", "Stationary", "Looming"))+
+  scale_linetype_manual(values = c(3, 1),
+                        name = "Study",
+                        labels = c("Seebold et al., (2023)", "Current Study")) +
+  scale_shape_manual(values = c(1, 16),
+                     name = "Study",
+                     labels = c("Seebold et al., (2023)", "Current Study")) +
+  theme_minimal(base_size = 12)
+sigstr_plot_full
+#ggsave("sigstr_plot_full.png", # Save these plots
+#       plot = sigstr_plot_full,
+#       path = "plots", 
+#       width = 6,
+#       height = 3,
+#       dpi = 600,
+#       bg = 'white')
+
+#sigstr_plot_s
+#sigstr_plot_l
+
+# Plot the d' scores from Study I (contrast only) -
+data2_d_plot = ddply(data2_d, .(sig_str, sound), summarize, avg_d = mean(avg_d)) # summarize data for plotting
+data2_d_plot$sound = as.factor(data2_d_plot$sound)                     
+
+d_prime_scores_contrast_StudyI = ggplot(data2_d_plot, aes(x = sig_str, y = avg_d, color = sound, linetype = sound, shape = sound, group = sound)) + 
+  geom_line(linewidth = 1) +  # Add line to connect points
+  geom_point(size = 3) +  # Add points to represent actual d' scores
+ # facet_wrap(~ task_type) +  # Create separate panels for each sound condition
+  labs(
+    x = "Signal Strength",
+    y = "Average d' Score"
+  ) +
+  scale_color_manual(values = c("red", "blue", "darkgreen","darkviolet", "darkorange", "cadetblue","deeppink"),
+                  name = "Sound",
+                  labels = c("No Sound", "Stationary", "2-Fold", "4-Fold",
+                              "8-Fold", "16-Fold", "32-Fold")) +
+  scale_linetype_manual(values = c(1, 2, 3, 4, 5, 6, 7),
+                  name = "Sound",
+                  labels = c("No Sound", "Stationary", "2-Fold", "4-Fold",
+                                   "8-Fold", "16-Fold", "32-Fold")) +
+  scale_shape_manual(values = c(1, 15, 16, 17, 18, 19, 20),
+                  name = "Sound",
+                  labels = c("No Sound", "Stationary", "2-Fold", "4-Fold",
+                             "8-Fold", "16-Fold", "32-Fold")) +
+  theme_minimal(base_size = 12)  # Use a minimal theme for a cleaner look
+#ggsave("dprime_scores_StudyI.png", # we comment this out so we don't override our plots
+#       plot = d_prime_scores_contrast_StudyI,
+#       path = "plots", 
+#       width = 6,
+#       height = 3,
+#       dpi = 600,
+#       bg = 'white')
+
+
+
+#### Replicating the Study I contrast with first 450 trials###
+#data2_450_plot = data2_d_plot
+#data2_1050_plot = data2_d_plot
+
+study_I_450_trial_plot = ggplot(data2_450_plot, aes(x = sig_str, y = avg_d, linetype = sound, color = sound))+# color = variable, shape = variable, linetype = variable)) +
+  geom_line(linewidth = 1) +  # Add line to connect points
+  geom_point(size = 3) +  # Add points to represent actual d' scores
+  labs(
+    x = "Signal Strength",
+    y = "Average d' Score"
+  ) +
+  scale_color_manual(values = c("red", "blue", "darkgreen"),
+                     name = "Sound",
+                     labels = c("No Sound", "Stationary", "Looming"))+
+  scale_linetype_manual(values = c(1, 2, 3),
+                        name = "Sound",
+                        labels = c("No Sound", "Stationary", "Looming")) +
+  scale_shape_manual(values = c(1, 16, 17),
+                     name = "Sound",
+                     labels = c("No Sound", "Stationary", "Looming")) +
+  theme_minimal(base_size = 12)
+
+#ggsave("study_I_450_trial_plot.png", # we comment this out so we don't override our plots
+#       plot = study_I_450_trial_plot,
+#       path = "plots", 
+#       width = 6,
+#       height = 3,
+#       dpi = 600,
+#       bg = 'white')
+
+data2_1050_plot_final = subset(data2_1050_plot, sound %in% c(-1,1,32))
+data2_1050_plot_final$sig_str = as.double(data2_1050_plot_final$sig_str)
+study_I_1050_trial_plot = ggplot(data2_1050_plot_final, aes(x = sig_str, y = avg_d, linetype = sound, color = sound))+# color = variable, shape = variable, linetype = variable)) +
+  geom_line(linewidth = 1) +  # Add line to connect points
+  geom_point(size = 3) +  # Add points to represent actual d' scores
+  labs(
+    x = "Signal Strength",
+    y = "Average d' Score"
+  ) +
+  scale_color_manual(values = c("red", "blue", "darkgreen"),
+                     name = "Sound",
+                     labels = c("No Sound", "Stationary", "Looming"))+
+  scale_linetype_manual(values = c(1, 2, 3),
+                        name = "Sound",
+                        labels = c("No Sound", "Stationary", "Looming")) +
+  scale_shape_manual(values = c(1, 16, 17),
+                     name = "Sound",
+                     labels = c("No Sound", "Stationary", "Looming")) +
+  theme_minimal(base_size = 12)
+
+#ggsave("study_I_1050_trial_plot.png", # we comment this out so we don't override our plots
+#       plot = study_I_1050_trial_plot,
+#       path = "plots", 
+#       width = 6,
+#       height = 3,
+#       dpi = 600,
+#       bg = 'white')

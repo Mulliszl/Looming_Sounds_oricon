@@ -1,0 +1,9 @@
+"0","if (!is.null(power_curve_data_rt)) {"
+"0","  cat(""### Power Curve Results for Response Time (RT)\n\n"")"
+"0","  print(knitr::kable(power_curve_data_rt))"
+"0","} else {"
+"0","  cat(""The RT power curve results are not available.\n"")"
+"0","}"
+"1","### Power Curve Results for Response Time (RT)
+
+"

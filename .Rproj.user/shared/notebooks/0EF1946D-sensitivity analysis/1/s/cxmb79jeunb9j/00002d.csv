@@ -1,0 +1,95 @@
+"0","# --- FIX: Provide the FULL path to the CSV file ---"
+"0","# This ensures R can find the file regardless of the script's location."
+"0","# Please verify this is the correct path on your machine."
+"0","file_path <- ""C:/Users/zach/OneDrive - North Carolina State University/TVLR/Looming_Sounds_Contrast/Zach work/ori_con_full.xlsx"""
+"0","ori_con_data <- read_xlsx(file_path)"
+"0",""
+"0","# Clean column names to be valid R variable names"
+"0","names(ori_con_data) <- make.names(names(ori_con_data))"
+"0",""
+"0","# Rename key columns, filter for the 'orientation' task, and create ordered factors."
+"0","# The key fix is renaming 'correct.' (created by make.names) to 'correct'."
+"0","analysis_data <- ori_con_data %>%"
+"0","  dplyr::rename("
+"0","    difficulty = contrast.orientation,"
+"0","    location = stimulus_direction,"
+"0","    sound = looming_strength,"
+"0","    rt = response_time,"
+"0","    correct = correct # FIX: Standardize the 'correct' column name"
+"0","  ) %>%  "
+"0","  filter(task_type == ""orientation"") %>%"
+"0","  mutate("
+"0","    sound_condition = factor(sound,"
+"0","                             levels = c(32, 1, -1),"
+"0","                             labels = c(""Looming"", ""Stationary"", ""No_Sound"")),"
+"0","    visual_location = factor(location,"
+"0","                             levels = c(0, 1),"
+"0","                             labels = c(""Center"", ""Periphery"")),"
+"0","    difficulty_level = factor(difficulty)"
+"0","  )"
+"0",""
+"0","# --- Calculate Mean Accuracy Vector ('mu_vector_acc') ---"
+"0","accuracy_means <- analysis_data %>%"
+"0","  group_by(sound_condition, visual_location, difficulty_level) %>%"
+"0","  dplyr::summarise(mean_accuracy = mean(correct, na.rm = TRUE), .groups = 'drop') %>%"
+"0","  arrange(sound_condition, visual_location, difficulty_level)"
+"0","mu_vector_acc <- accuracy_means$mean_accuracy"
+"0",""
+"0","# --- Calculate Mean Response Time Vector ('mu_vector_rt') ---"
+"0","rt_means <- analysis_data %>%"
+"0","  filter(correct == 1) %>% # Analyze RT only for correct responses"
+"0","  group_by(sound_condition, visual_location, difficulty_level) %>%"
+"0","  dplyr::summarise(mean_rt = mean(rt, na.rm = TRUE), .groups = 'drop') %>%"
+"0","  arrange(sound_condition, visual_location, difficulty_level)"
+"0","mu_vector_rt <- rt_means$mean_rt"
+"0",""
+"0","# --- Display Vectors for verification ---"
+"0","cat(""--- For Accuracy ---\n"")"
+"1","--- For Accuracy ---
+"
+"0","cat(""mu_vector_acc <- "")"
+"1","mu_vector_acc <- "
+"0","dput(mu_vector_acc)"
+"1","c(0.528395061728395, 0.639506172839506, 0.693827160493827, 0.748148148148148, 
+"
+"1","0.77037037037037, 0.498765432098765, 0.637037037037037, 0.718518518518519, 
+"
+"1","0.748148148148148, 0.802469135802469, 0.481481481481481, 0.664197530864198, 
+"
+"1","0.71358024691358, 0.716049382716049, 0.782716049382716, 0.530864197530864, 
+"
+"1","0.602469135802469, 0.71358024691358, 0.782716049382716, 0.797530864197531, 
+"
+"1","0.506172839506173, 0.582716049382716, 0.696296296296296, 0.71358024691358, 
+"
+"1","0.765432098765432, 0.565432098765432, 0.649382716049383, 0.728395061728395, 
+"
+"1","0.775308641975309, 0.795061728395062, 0.837448559670782, 0.849794238683128
+"
+"1",")
+"
+"0","cat(""\n--- For Response Time ---\n"")"
+"1","
+--- For Response Time ---
+"
+"0","cat(""mu_vector_rt <- "")"
+"1","mu_vector_rt <- "
+"0","dput(mu_vector_rt)"
+"1","c(561.242990654206, 457.247104247104, 463.957295373665, 426.412541254125, 
+"
+"1","436.442307692308, 670.366336633663, 503.294573643411, 475.398625429553, 
+"
+"1","516.267326732673, 499.68, 480.523076923077, 482.64312267658, 
+"
+"1","428.622837370242, 438.144827586207, 430.059936908517, 538.441860465116, 
+"
+"1","513.352459016393, 474.370242214533, 462.630914826498, 454.102167182663, 
+"
+"1","562.824390243902, 529.275423728814, 491.517730496454, 583.598615916955, 
+"
+"1","507.01935483871, 669.956331877729, 589.330798479087, 560.342372881356, 
+"
+"1","566.46178343949, 502.372670807453, 1118.56756756757, 1385.09443099274
+"
+"1",")
+"

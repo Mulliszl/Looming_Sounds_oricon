@@ -1,0 +1,10 @@
+"0","# Print the power results table from the overall ANOVA"
+"0","if (!is.null(power_analysis_results$main_results)) {"
+"0","  cat(""### ANOVA Power Results Table (Overall Effects)\n\n"")"
+"0","  print(knitr::kable(power_analysis_results$main_results))"
+"0","} else {"
+"0","  cat(""The main ANOVA power results table is not available in the expected location.\n"")"
+"0","}"
+"1","### ANOVA Power Results Table (Overall Effects)
+
+"
