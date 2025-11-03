@@ -1,0 +1,10 @@
+"0","# Plot the power curve for all effects calculated during the power analysis"
+"0","plot_power("
+"0","  design_result = power_analysis_results,"
+"0","  desired_power = 80,"
+"0","  min_n = 20,"
+"0","  max_n = 200"
+"0",")"
+"2","Error in x$terms %||% attr(x, ""terms"") %||% stop(""no terms component nor attribute"") : 
+  no terms component nor attribute
+"

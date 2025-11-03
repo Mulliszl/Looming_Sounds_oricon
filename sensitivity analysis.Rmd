@@ -1,0 +1,256 @@
+---
+title: "A Priori Power Analysis for Visual Orientation Sensitivity"
+author: "Rosewood & Seebold"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+# Introduction
+
+This document presents a simulated a priori power analysis for a **3x2x3 fully within-subjects repeated-measures design**. The analysis aims to determine the required sample size to detect a significant three-way interaction effect on two dependent variables: **Accuracy** and **Response Time (RT)**.
+
+The experimental factors are:
+1.  **Auditory Condition (3 levels):** Looming, Stationary, No Sound
+2.  **Visual Field Location (2 levels):** Center, Periphery
+3.  **Task Difficulty (3 levels):** Low, Medium, High
+
+**Hypotheses:**
+* **Center Looming Audio:** Enhanced visual orientation sensitivity for center audio compared to silent, indicated by higher accuracy and/or faster RT.
+* **Side Looming Audio:** Asymmetric effects, with better performance when audio and visual stimuli are spatially congruent.
+* **Peripheral Effect:** The facilitatory effect of auditory looming is more pronounced for peripheral visual targets.
+* **Difficulty Dependence:** Impact of auditory looming varies with difficulty, with the most significant effects at intermediate levels.
+
+# Method
+
+The power analysis is conducted by simulating data based on effect sizes observed in a pilot study. For each sample size tested, data is simulated 1000 times, a repeated-measures ANOVA is performed on each simulated dataset, and the statistical power is calculated as the proportion of these simulations that yield a p-value below the alpha level (α = 0.05) for the three-way interaction.
+
+## Setup
+
+First, we load the necessary R packages for data manipulation (`tidyverse`), reading files (`readr`), and running ANOVAs (`afex`).
+
+```{r setup, message=FALSE, warning=FALSE}
+# Install packages if not already installed
+if (!requireNamespace("tidyverse", quietly = TRUE)) install.packages("tidyverse")
+if (!requireNamespace("afex", quietly = TRUE)) install.packages("afex")
+if (!requireNamespace("readr", quietly = TRUE)) install.packages("readr")
+if (!requireNamespace("readxl", quietly = TRUE)) install.packages("readxl")
+
+library(tidyverse)
+library(afex)
+library(readr)
+library(readxl)
+```
+
+## Step 1: Calculate Effect Sizes from Pilot Data
+
+This chunk loads the pilot data from its full path, cleans it, and calculates the mean accuracy and response time for each of the 18 experimental conditions. These means (`mu_vector_acc` and `mu_vector_rt`) serve as the basis for the simulation.
+
+```{r calculate_effect_sizes_from_pilot, message=FALSE, warning=FALSE}
+# --- FIX: Provide the FULL path to the CSV file ---
+# This ensures R can find the file regardless of the script's location.
+# Please verify this is the correct path on your machine.
+file_path <- "C:/Users/zach/OneDrive - North Carolina State University/TVLR/Looming_Sounds_Contrast/Zach work/ori_con_full.xlsx"
+ori_con_data <- read_xlsx(file_path)
+
+# Clean column names to be valid R variable names
+names(ori_con_data) <- make.names(names(ori_con_data))
+
+# Rename key columns, filter for the 'orientation' task, and create ordered factors.
+# The key fix is renaming 'correct.' (created by make.names) to 'correct'.
+analysis_data <- ori_con_data %>%
+  dplyr::rename(
+    difficulty = contrast.orientation,
+    location = stimulus_direction,
+    sound = looming_strength,
+    rt = response_time,
+    correct = correct # FIX: Standardize the 'correct' column name
+  ) %>%  
+  filter(task_type == "orientation") %>%
+  mutate(
+    sound_condition = factor(sound,
+                             levels = c(32, 1, -1),
+                             labels = c("Looming", "Stationary", "No_Sound")),
+    visual_location = factor(location,
+                             levels = c(0, 1),
+                             labels = c("Center", "Periphery")),
+    difficulty_level = factor(difficulty)
+  )
+
+# --- Calculate Mean Accuracy Vector ('mu_vector_acc') ---
+accuracy_means <- analysis_data %>%
+  group_by(sound_condition, visual_location, difficulty_level) %>%
+  dplyr::summarise(mean_accuracy = mean(correct, na.rm = TRUE), .groups = 'drop') %>%
+  arrange(sound_condition, visual_location, difficulty_level)
+mu_vector_acc <- accuracy_means$mean_accuracy
+
+# --- Calculate Mean Response Time Vector ('mu_vector_rt') ---
+rt_means <- analysis_data %>%
+  filter(correct == 1) %>% # Analyze RT only for correct responses
+  group_by(sound_condition, visual_location, difficulty_level) %>%
+  dplyr::summarise(mean_rt = mean(rt, na.rm = TRUE), .groups = 'drop') %>%
+  arrange(sound_condition, visual_location, difficulty_level)
+mu_vector_rt <- rt_means$mean_rt
+
+# --- Display Vectors for verification ---
+cat("--- For Accuracy ---\n")
+cat("mu_vector_acc <- ")
+dput(mu_vector_acc)
+
+cat("\n--- For Response Time ---\n")
+cat("mu_vector_rt <- ")
+dput(mu_vector_rt)
+```
+
+## Step 2: Power Simulation for Accuracy
+
+Here, we define the simulation parameters and run the power analysis for the **Accuracy** dependent variable. The data generation logic has been improved to correctly structure the within-subjects data.
+
+```{r power_simulation_accuracy, cache=TRUE}
+# Simulation Parameters
+sample_sizes <- seq(30, 80, by = 5) # Test N from 30 to 80
+nsim <- 1000 # Number of simulations per sample size
+sd_acc <- 0.2 # Estimated standard deviation for accuracy
+alpha <- 0.05 # Significance level
+
+# Run the simulation loop
+power_results_acc <- sapply(sample_sizes, function(n) {
+  significant_results <- 0
+  for (i in 1:nsim) {
+    # FIX: Correctly structure the long-format data for repeated measures
+    sim_data <- tibble(
+      id = factor(rep(1:n, each = 18)),
+      sound = factor(rep(c("Looming", "Stationary", "No_Sound"), each = 6, times = n)),
+      location = factor(rep(c("Center", "Periphery"), each = 3, times = 3 * n)),
+      difficulty = factor(rep(rep(1:3, each = 1), times = 6 * n)),
+      accuracy = rnorm(n * 18, mean = rep(mu_vector_acc, times = n), sd = sd_acc)
+    )
+    
+    # Run the ANOVA
+    model_anova <- suppressMessages(aov_4(accuracy ~ sound * location * difficulty + (sound * location * difficulty | id), data = sim_data))
+    
+    # Check for significance of the 3-way interaction
+    p_value <- summary(model_anova)$anova_table$`Pr(>F)`[7] # 7th row is the 3-way interaction
+    if (!is.na(p_value) && p_value < alpha) {
+      significant_results <- significant_results + 1
+    }
+  }
+  significant_results / nsim
+})
+
+# Store results in a tibble
+power_curve_data_acc <- tibble(
+  n_subjects = sample_sizes,
+  power = power_results_acc
+)
+```
+
+# Results
+
+### Accuracy Power Analysis Results
+
+```{r acc_results_table, echo=FALSE, results='asis'}
+if (exists("power_curve_data_acc")) {
+  cat("\n#### Power Curve Results for Accuracy\n\n")
+  print(knitr::kable(power_curve_data_acc, caption = "Simulated Power by Sample Size for Accuracy"))
+  
+  required_n_acc <- power_curve_data_acc %>%
+    filter(power >= 0.80) %>%
+    slice_min(n_subjects, n = 1) %>%
+    pull(n_subjects)
+  
+  if (length(required_n_acc) > 0) {
+    cat(paste0("\n**Required sample size (N) for 80% power (Accuracy) is approximately: ", required_n_acc, "**\n\n"))
+  } else {
+    cat("\n**Required sample size for 80% power (Accuracy) was not reached within the tested range.**\n")
+  }
+}
+```
+
+## Step 3: Power Simulation for Response Time (RT)
+
+Next, we run the power analysis for the **Response Time** dependent variable, using the same corrected data structure.
+
+```{r power_simulation_rt, cache=TRUE}
+# Simulation Parameters
+sd_rt <- 250 # Estimated standard deviation for RT in ms
+# sample_sizes and nsim are reused from the accuracy simulation
+
+# Run the simulation loop
+power_results_rt <- sapply(sample_sizes, function(n) {
+  significant_results <- 0
+  for (i in 1:nsim) {
+    # FIX: Correctly structure the long-format data for repeated measures
+    sim_data <- tibble(
+      id = factor(rep(1:n, each = 18)),
+      sound = factor(rep(c("Looming", "Stationary", "No_Sound"), each = 6, times = n)),
+      location = factor(rep(c("Center", "Periphery"), each = 3, times = 3 * n)),
+      difficulty = factor(rep(rep(1:3, each = 1), times = 6 * n)),
+      rt = rnorm(n * 18, mean = rep(mu_vector_rt, times = n), sd = sd_rt)
+    )
+    
+    # Run the ANOVA
+    model_anova <- suppressMessages(aov_4(rt ~ sound * location * difficulty + (sound * location * difficulty | id), data = sim_data))
+    
+    # Check for significance of the 3-way interaction
+    p_value <- summary(model_anova)$anova_table$`Pr(>F)`[7]
+    if (!is.na(p_value) && p_value < alpha) {
+      significant_results <- significant_results + 1
+    }
+  }
+  significant_results / nsim
+})
+
+# Store results in a tibble
+power_curve_data_rt <- tibble(
+  n_subjects = sample_sizes,
+  power = power_results_rt
+)
+```
+
+### Response Time (RT) Power Analysis Results
+
+```{r rt_results_table, echo=FALSE, results='asis'}
+if (exists("power_curve_data_rt")) {
+  cat("\n#### Power Curve Results for Response Time\n\n")
+  print(knitr::kable(power_curve_data_rt, caption = "Simulated Power by Sample Size for RT"))
+
+  required_n_rt <- power_curve_data_rt %>%
+    filter(power >= 0.80) %>%
+    slice_min(n_subjects, n = 1) %>%
+    pull(n_subjects)
+  
+  if (length(required_n_rt) > 0) {
+    cat(paste0("\n**Required sample size (N) for 80% power (RT) is approximately: ", required_n_rt, "**\n\n"))
+  } else {
+    cat("\n**Required sample size for 80% power (RT) was not reached within the tested range.**\n")
+  }
+}
+```
+
+## Step 4: Plotting the Power Curves
+
+Visualizing the results helps in understanding the relationship between sample size and statistical power.
+
+```{r plot_power_curves, echo=FALSE, fig.cap="Power curves for Accuracy and Response Time"}
+power_curve_data_acc$dv <- "Accuracy"
+power_curve_data_rt$dv <- "Response Time"
+
+combined_power_data <- bind_rows(power_curve_data_acc, power_curve_data_rt)
+
+ggplot(combined_power_data, aes(x = n_subjects, y = power, color = dv)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(
+    title = "A Priori Power Analysis",
+    subtitle = "Power to Detect a 3-Way Interaction Effect",
+    x = "Sample Size (N)",
+    y = "Statistical Power",
+    color = "Dependent Variable"
+  ) +
+  theme_minimal()
+```

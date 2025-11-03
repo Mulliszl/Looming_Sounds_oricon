@@ -1,0 +1,14 @@
+"0","required_n_acc <- power_curve_data_acc %>%"
+"0","  filter(power >= 0.8) %>%"
+"0","  slice_min(n_subjects, n = 1) %>%"
+"0","  pull(n_subjects)"
+"0",""
+"0","if (length(required_n_acc) > 0) {"
+"0","  cat(paste0(""\n**Required sample size (N) for 80% power (Accuracy): **"", required_n_acc, ""\n\n""))"
+"0","} else {"
+"0","  cat(""\n**Required sample size for 80% power (Accuracy) was not reached within the tested range.**\n\n"")"
+"0","}"
+"1","
+**Required sample size (N) for 80% power (Accuracy): **10
+
+"

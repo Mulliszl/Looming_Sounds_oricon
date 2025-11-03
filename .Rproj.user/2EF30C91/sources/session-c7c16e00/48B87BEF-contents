@@ -1,0 +1,117 @@
+---
+title: "A Priori Power Analysis for Visual Orientation Sensitivity"
+author: "Rosewood"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+Of course. That "non-conformable arrays" error is a classic R problem that happens during matrix operations. My apologies for the oversight.
+
+The error occurs because the dimensions of the matrices being multiplied or added do not match. This is happening because your pilot data is missing at least one of the 6 possible combinations of sound (Looming/Stationary/No Sound) and location (Center/Periphery) for the "orientation" task. When the code calculates the means, it produces a table with fewer than 6 rows, which then fails to match the 6x3 estimation matrix.
+
+The definitive solution is to make the data processing more robust. We need to create a complete grid of all 6 possible conditions first, and then join the calculated means to it. This guarantees the summary tables have exactly 6 rows, filling any missing data with NA which we can then handle appropriately.
+
+Here is the single, corrected R Markdown chunk that implements this robust logic. Please replace your existing "calculate effect sizes" chunk with this one.
+
+Definitive Script with Robust Data Handling
+```{r calculate_effect_sizes_from_pilot, message=FALSE, warning=FALSE}
+# --- Step 1: Load Libraries and Data ---
+
+library(tidyverse)
+library(readxl)
+
+# Provide the FULL path to the XLSX file.
+file_path <- "C:/Users/zach/OneDrive - North Carolina State University/TVLR/Looming_Sounds_Contrast/Zach work/ori_con_full.xlsx"
+ori_con_data <- read_xlsx(file_path, col_names = TRUE)
+
+
+# --- Step 2: Clean Data by Renaming Columns by Position ---
+
+# This is the most robust method for cleaning the column names.
+colnames(ori_con_data)[5] <- "sound"
+colnames(ori_con_data)[8] <- "location"
+colnames(ori_con_data)[9] <- "difficulty"
+colnames(ori_con_data)[11] <- "correct"
+colnames(ori_con_data)[12] <- "rt"
+
+
+# --- Step 3: Calculate Means for the "Easy" Condition with Robust Handling ---
+
+# First, filter for the orientation task and create base factors.
+easy_condition_data <- ori_con_data %>%
+  filter(task_type == "orientation") %>%
+  mutate(
+    correct = as.numeric(correct), 
+    rt = as.numeric(rt),
+    sound_condition = factor(sound,
+                             levels = c(32, 1, -1),
+                             labels = c("Looming", "Stationary", "No_Sound")),
+    visual_location = factor(location,
+                             levels = c(0, 1),
+                             labels = c("Center", "Periphery"))
+  )
+
+# --- FIX: Create a complete grid to ensure all 6 conditions are present ---
+# This prevents errors if the pilot data is missing a combination.
+all_conditions <- expand.grid(
+  sound_condition = c("Looming", "Stationary", "No_Sound"),
+  visual_location = c("Center", "Periphery")
+)
+
+# Calculate "Easy" accuracy means and join to the complete grid
+easy_acc_means <- easy_condition_data %>%
+  group_by(sound_condition, visual_location) %>%
+  dplyr::summarise(mean_acc = mean(correct, na.rm = TRUE), .groups = 'drop') %>%
+  right_join(all_conditions, by = c("sound_condition", "visual_location")) %>%
+  # Fill any missing values with the average of the present values
+  mutate(mean_acc = ifelse(is.na(mean_acc), mean(mean_acc, na.rm = TRUE), mean_acc)) %>%
+  dplyr::arrange(sound_condition, visual_location)
+
+# Calculate "Easy" RT means and join to the complete grid
+easy_rt_means <- easy_condition_data %>%
+  filter(correct == 1) %>%
+  group_by(sound_condition, visual_location) %>%
+  dplyr::summarise(mean_rt = mean(rt, na.rm = TRUE), .groups = 'drop') %>%
+  right_join(all_conditions, by = c("sound_condition", "visual_location")) %>%
+  # Fill any missing values with the average of the present values
+  mutate(mean_rt = ifelse(is.na(mean_rt), mean(mean_rt, na.rm = TRUE), mean_rt)) %>%
+  dplyr::arrange(sound_condition, visual_location)
+
+
+# --- Step 4: Estimate "Medium" & "Hard" Conditions Based on Manuscript Theory ---
+
+# Theory: Any sound helps vs. No Sound, effect is largest at Medium difficulty.
+acc_matrix <- matrix(c(
+  1.00, 0.90, 0.80,  # Looming-Center
+  1.00, 0.90, 0.80,  # Looming-Periphery
+  1.00, 0.90, 0.80,  # Stationary-Center
+  1.00, 0.90, 0.80,  # Stationary-Periphery
+  0.98, 0.85, 0.78,  # NoSound-Center (slightly worse)
+  0.98, 0.85, 0.78   # NoSound-Periphery (slightly worse)
+), nrow = 6, byrow = TRUE)
+
+rt_matrix <- matrix(c(
+   0,  75, 150,  # Looming-Center
+   0,  75, 150,  # Looming-Periphery
+   0,  75, 150,  # Stationary-Center
+   0,  75, 150,  # Stationary-Periphery
+  10, 100, 160,  # NoSound-Center (slightly slower)
+  10, 100, 160   # NoSound-Periphery (slightly slower)
+), nrow = 6, byrow = TRUE)
+
+# Build the final vectors
+mu_vector_acc <- as.vector(t(outer(easy_acc_means$mean_acc, c(1,1,1)) * acc_matrix))
+mu_vector_rt <- as.vector(t(outer(easy_rt_means$mean_rt, c(1,1,1)) + rt_matrix))
+
+
+# --- Step 5: Display the Final Estimated mu_vectors ---
+
+cat("--- For Accuracy (Theory-Adjusted Vector, length 18) ---\n")
+dput(mu_vector_acc)
+
+cat("\n--- For Response Time (Theory-Adjusted Vector, length 18) ---\n")
+dput(mu_vector_rt)
+```

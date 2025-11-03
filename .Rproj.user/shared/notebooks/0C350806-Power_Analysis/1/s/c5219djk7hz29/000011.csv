@@ -1,0 +1,14 @@
+"0","required_n_rt <- power_curve_data_rt %>%"
+"0","  filter(power >= 0.8) %>%"
+"0","  slice_min(n_subjects, n = 1) %>%"
+"0","  pull(n_subjects)"
+"0",""
+"0","if (length(required_n_rt) > 0) {"
+"0","  cat(paste0(""\n**Required sample size (N) for 80% power (RT): **"", required_n_rt, ""\n\n""))"
+"0","} else {"
+"0","  cat(""\n**Required sample size for 80% power (RT) was not reached within the tested range.**\n\n"")"
+"0","}"
+"1","
+**Required sample size (N) for 80% power (RT): **60
+
+"

@@ -1,0 +1,281 @@
+---
+title: "Power_analysis"
+author: "Rosewood"
+date: "2025-09-08"
+output: html_document
+---
+# Introduction
+
+This document presents a simulated power analysis for a 3x2x3 fully within-subjects repeated-measures ANOVA, separately considering two dependent variables: **Response Time (RT)** and **Accuracy**.
+
+**Hypotheses:**
+*   **Center Looming Audio:** Enhanced visual orientation sensitivity for center audio compared to silent, indicated by higher accuracy and/or faster RT.
+*   **Side Looming Audio:** Asymmetric effects, with better performance (higher accuracy/faster RT) when audio and visual stimuli are spatially congruent.
+*   **Peripheral Effect:** The facilitatory effect of auditory looming is more pronounced for peripheral visual targets.
+*   **Difficulty Dependence:** Impact of auditory looming varies with difficulty, with the most significant effects at intermediate levels.
+
+# Method
+
+The power analysis is conducted by simulating data for each dependent variable separately. For each sample size tested, data is simulated multiple times, an ANOVA is run, and the proportion of significant results determines the power.
+
+## Setup
+
+First, we load the `tidyverse` for data manipulation and the `afex` package for repeated-measures ANOVA.
+
+```{r setup, message=FALSE, warning=FALSE}
+# Install packages if not already installed
+if (!requireNamespace("tidyverse", quietly = TRUE)) {
+  install.packages("tidyverse")
+}
+if (!requireNamespace("afex", quietly = TRUE)) {
+  install.packages("afex")
+}
+
+# Load packages
+library(tidyverse)
+library(afex)
+```
+
+##Simulation Parameters
+We define the simulation parameters, including the means reflecting your hypotheses, standard deviations, and the alpha level.
+```{r parameters, warning=FALSE, message=FALSE}
+# --- Define Design Parameters ---
+auditory_levels <- c("Silent", "Center", "Side")
+location_levels <- c("Foveal", "Peripheral")
+difficulty_levels <- c("Low", "Medium", "High")
+
+# Number of levels for each factor
+n_auditory <- length(auditory_levels)
+n_location <- length(location_levels)
+n_difficulty <- length(difficulty_levels)
+
+# Set common simulation parameters
+r <- 0.6       # Correlation among repeated measures
+alpha <- 0.05  # Alpha level for significance testing
+nsim <- 1000   # Number of simulations
+```
+
+## Response Time (RT) Power Analysis
+This section focuses on RT as the dependent variable. Note that faster RTs are better, so lower mean values represent enhancement.
+### RT Parameters
+```{r rt_parameters}
+# Hypothesized means for RT (~500ms scale)
+mu_vector_rt <- c(
+  # Silent (Auditory 1)
+  481, 520, 540,    # Foveal, Low/Med/High Difficulty (slower)
+  533, 530, 550,    # Peripheral, Low/Med/High Difficulty (slower)
+  
+  # Center Auditory (Auditory 2) - Faster RTs
+  481, 500, 530,   # Foveal, Low/Med/High Difficulty
+  449, 505, 535,   # Peripheral, Low/Med/High Difficulty (more pronounced effect)
+  
+  # Side Auditory (Auditory 3) - Asymmetric effects, faster on medium difficulty
+  481, 520, 540,   # Foveal, Low/Med/High Difficulty
+  463, 480, 530    # Peripheral, Low/Med/High Difficulty (Faster on medium)
+)
+
+# Set variance parameters for RT simulation
+sd_between_rt <- 50 # Standard deviation for subject-level effects
+sd_error_rt <- 30   # Standard deviation for residual error
+```
+
+### RT Simulation and Results
+
+```{r run_rt_power_curve, message=FALSE, warning=FALSE}
+sample_sizes <- seq(10, 100, by = 10)
+power_results_rt <- purrr::map_dbl(sample_sizes, ~{
+  significant_results <- 0
+  
+  for (i in 1:nsim) {
+    data_sim <- expand.grid(
+      subject = factor(1:.),
+      auditory = factor(auditory_levels),
+      location = factor(location_levels),
+      difficulty = factor(difficulty_levels)
+    )
+    
+    subject_effects <- rnorm(., mean = 0, sd = sd_between_rt)
+    data_sim$y <- mu_vector_rt[
+      (as.numeric(data_sim$auditory) - 1) * (n_location * n_difficulty) +
+      (as.numeric(data_sim$location) - 1) * n_difficulty +
+      as.numeric(data_sim$difficulty)
+    ] + subject_effects[data_sim$subject] + rnorm(nrow(data_sim), mean = 0, sd = sd_error_rt)
+    
+    model_anova <- afex::aov_ez(
+      id = "subject",
+      dv = "y",
+      between = NULL,
+      within = c("auditory", "location", "difficulty"),
+      data = data_sim,
+      fun_aggregate = mean
+    )
+    
+    p_value <- anova(model_anova)$`Pr(>F)`[6] # Assuming 6th row is 3-way interaction
+    if (!is.na(p_value) && p_value < alpha) {
+      significant_results <- significant_results + 1
+    }
+  }
+  
+  significant_results / nsim
+})
+
+power_curve_data_rt <- tibble(
+  n_subjects = sample_sizes,
+  power = power_results_rt
+)
+
+```
+
+#### RT Results Table
+
+```{r rt_results_table, echo=FALSE, results='asis'}
+if (!is.null(power_curve_data_rt)) {
+  cat("### Power Curve Results for Response Time (RT)\n\n")
+  print(knitr::kable(power_curve_data_rt))
+} else {
+  cat("The RT power curve results are not available.\n")
+}
+
+required_n_rt <- power_curve_data_rt %>%
+  filter(power >= 0.8) %>%
+  slice_min(n_subjects, n = 1) %>%
+  pull(n_subjects)
+
+if (length(required_n_rt) > 0) {
+  cat(paste0("\n**Required sample size (N) for 80% power (RT): **", required_n_rt, "\n\n"))
+} else {
+  cat("\n**Required sample size for 80% power (RT) was not reached within the tested range.**\n\n")
+}
+
+```
+
+#### RT Power Curve Plot
+
+```{r rt_plot, echo=FALSE, fig.cap="Power Curve for 3-Way Interaction (RT)"}
+power_curve_data_rt %>%
+  ggplot(aes(x = n_subjects, y = power)) +
+  geom_line(color = "blue") +
+  geom_point(color = "blue") +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red") +
+  labs(
+    title = "Power Curve for 3-Way Interaction (RT)",
+    x = "Sample Size (N)",
+    y = "Power"
+  ) +
+  theme_minimal()
+```
+
+## Accuracy (Percentage) Power Analysis
+
+This section focuses on Accuracy as the dependent variable. **Note that higher accuracy is better, so higher mean values represent enhancement.**
+
+### Accuracy Parameters
+
+
+```{r accuracy_parameters}
+# Hypothesized means for Accuracy (~percentage scale)
+mu_vector_acc <- c(
+  # Silent (Auditory 1)
+  85, 80, 66,    # Foveal, Low/Med/High Difficulty
+  80, 75, 65,    # Peripheral, Low/Med/High Difficulty
+  
+  # Center Auditory (Auditory 2) - Higher accuracy
+  88, 83, 66,   # Foveal, Low/Med/High Difficulty
+  83, 85, 67,   # Peripheral, Low/Med/High Difficulty (more pronounced effect)
+  
+  # Side Auditory (Auditory 3) - Asymmetric effects, higher on medium difficulty
+  87, 82, 66,   # Foveal, Low/Med/High Difficulty
+  82, 90, 67,    # Peripheral, Low/Med/High Difficulty (Higher on medium)
+)
+
+# Set variance parameters for Accuracy simulation
+sd_between_acc <- 5 # Standard deviation for subject-level effects
+sd_error_acc <- 5   # Standard deviation for residual error
+```
+
+### Accuracy Simulation and Results
+
+
+```{r run_accuracy_power_curve, message=FALSE, warning=FALSE}
+power_results_acc <- purrr::map_dbl(sample_sizes, ~{
+  significant_results <- 0
+  
+  for (i in 1:nsim) {
+    data_sim <- expand.grid(
+      subject = factor(1:.),
+      auditory = factor(auditory_levels),
+      location = factor(location_levels),
+      difficulty = factor(difficulty_levels)
+    )
+    
+    subject_effects <- rnorm(., mean = 0, sd = sd_between_acc)
+    data_sim$y <- mu_vector_acc[
+      (as.numeric(data_sim$auditory) - 1) * (n_location * n_difficulty) +
+      (as.numeric(data_sim$location) - 1) * n_difficulty +
+      as.numeric(data_sim$difficulty)
+    ] + subject_effects[data_sim$subject] + rnorm(nrow(data_sim), mean = 0, sd = sd_error_acc)
+    
+    model_anova <- afex::aov_ez(
+      id = "subject",
+      dv = "y",
+      between = NULL,
+      within = c("auditory", "location", "difficulty"),
+      data = data_sim,
+      fun_aggregate = mean
+    )
+    
+    p_value <- anova(model_anova)$`Pr(>F)`[6] # Assuming 6th row is 3-way interaction
+    if (!is.na(p_value) && p_value < alpha) {
+      significant_results <- significant_results + 1
+    }
+  }
+  
+  significant_results / nsim
+})
+
+power_curve_data_acc <- tibble(
+  n_subjects = sample_sizes,
+  power = power_results_acc
+)
+```
+
+#### Accuracy Results Table
+
+
+```{r acc_results_table, echo=FALSE, results='asis'}
+if (!is.null(power_curve_data_acc)) {
+  cat("\n### Power Curve Results for Accuracy (Percentage)\n\n")
+  print(knitr::kable(power_curve_data_acc))
+} else {
+  cat("\nThe Accuracy power curve results are not available.\n")
+}
+
+required_n_acc <- power_curve_data_acc %>%
+  filter(power >= 0.8) %>%
+  slice_min(n_subjects, n = 1) %>%
+  pull(n_subjects)
+
+if (length(required_n_acc) > 0) {
+  cat(paste0("\n**Required sample size (N) for 80% power (Accuracy): **", required_n_acc, "\n\n"))
+} else {
+  cat("\n**Required sample size for 80% power (Accuracy) was not reached within the tested range.**\n\n")
+}
+```
+
+
+#### Accuracy Power Curve Plot
+
+```{r acc_plot, echo=FALSE, fig.cap="Power Curve for 3-Way Interaction (Accuracy)"}
+power_curve_data_acc %>%
+  ggplot(aes(x = n_subjects, y = power)) +
+  geom_line(color = "blue") +
+  geom_point(color = "blue") +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red") +
+  labs(
+    title = "Power Curve for 3-Way Interaction (Accuracy)",
+    x = "Sample Size (N)",
+    y = "Power"
+  ) +
+  theme_minimal()
+```
+

@@ -1,0 +1,10 @@
+"0","if (!is.null(power_curve_data_acc)) {"
+"0","  cat(""\n### Power Curve Results for Accuracy (Percentage)\n\n"")"
+"0","  print(knitr::kable(power_curve_data_acc))"
+"0","} else {"
+"0","  cat(""\nThe Accuracy power curve results are not available.\n"")"
+"0","}"
+"1","
+### Power Curve Results for Accuracy (Percentage)
+
+"

@@ -1,0 +1,254 @@
+# Test data from our Orientation-Contrast Experiment, F23 - S24
+# Made by Patrick Seebold, pcseebol@ncsu.edu, 3/12/24 - last updated 9/12/24
+
+# install all packages that are not already installed
+if(!require("tidyverse")) install.packages("tidyverse") # general good practice
+if(!require("readxl")) install.packages("readxl") # to open data
+if(!require("plyr")) install.packages("plyr") # data manipulation; a life saver
+if(!require("ggplot2")) install.packages("ggplot2") # plotting
+if(!require("lme4")) install.packages("lme4") # LME SOP - for preliminary analysis here
+if(!require("lmerTest")) install.packages("lmerTest") # auto computes LME p-values 
+if(!require("multcomp")) install.packages("multcomp") # post hoc comparison
+if(!require("car")) install.packages("car") # Anova() (Type III)
+if(!require("emmeans")) install.packages("emmeans") #  post hoc analyses
+
+setwd("C:/Users/zach/OneDrive - North Carolina State University/TVLR/Looming_Sounds_Contrast/Patrick's Work/ZMR_Test")
+
+# open data from excel using readxl command, 'read_excel()'
+exp_data = read_excel('ori_con_full.xlsx')
+
+###### Sanity check ########
+head(exp_data)
+summary(exp_data)
+
+# some variables need to be renamed
+colnames(exp_data)  
+colnames(exp_data)[1]="id" 
+colnames(exp_data)[5]="sound"
+colnames(exp_data)[9]="sig_str"
+colnames(exp_data)[11]="correct"
+
+# remove the practice trials - no need to analyze them
+exp_data = subset(exp_data, exp_data$sound!='placeholder')
+
+#checking the completeness of data and any potential recording errors
+with(exp_data, table(id, sound))
+with(exp_data,table(task_type, sig_str)) # note that orientation sig_strs are linear, contrast are logarithmic
+with(exp_data, table(id, stimulus_direction)) # Ori and Con sig_strs cover range of ~chance to pretty easy, but no direct mapping between them
+with(exp_data, table(stimulus_direction, task_type, sound))
+
+# remove the trouble makers from the data - to visualize these participants,
+# SKIP THE SUBSET() CODE below, clean the data, and plot the graphs. 
+
+# We take out any participants with chance level performance 
+# so long as their curves show marked improvement over the chance level condition
+exp_data = subset(exp_data, exp_data$id != 1) # participant 1 is a strange outlier - removed for ~76% acc at chance contrast lvl
+exp_data = subset(exp_data, exp_data$id != 4)
+exp_data = subset(exp_data, exp_data$id != 6)
+exp_data = subset(exp_data, exp_data$id != 7)
+exp_data = subset(exp_data, exp_data$id != 10)
+exp_data = subset(exp_data, exp_data$id != 11)
+exp_data = subset(exp_data, exp_data$id != 12)
+exp_data = subset(exp_data, exp_data$id != 21)
+exp_data = subset(exp_data, exp_data$id != 22)
+exp_data = subset(exp_data, exp_data$id != 27)
+exp_data = subset(exp_data, exp_data$id != 28)
+
+# We want to clean out trials that are too short or too long
+# visualize the rt for exp_data - we have some extreme outliers here
+hist(exp_data$response_time)
+
+# examine the percentiles of the exp_data
+percentiles = quantile(exp_data$response_time, probs = seq(.001, .999, by = .001)) 
+percentiles
+
+# we can't take off 3 SD below mean, so log transform to clean the exp_data
+exp_data$RT_log = log(exp_data$response_time)
+histo = hist(exp_data$RT_log)
+
+# we remove upper values that are more than 3 SD above the mean.
+sd = sd(exp_data$RT_log)
+mean = mean(exp_data$RT_log)
+
+# remove outliers - rt faster than 61.99, slower than 2029.018
+exp_data = subset(exp_data, RT_log > (mean - 3*sd) & RT_log < (mean + 3*sd))
+
+# visualize the rt for exp_data and mean of the cleaned exp_data
+mean(exp_data$response_time)
+sd(exp_data$response_time)
+hist(exp_data$response_time) # now our distribution looks much healthier
+
+# Split exp_data by task type and check summary stats
+con_data = subset(exp_data, exp_data$task_type == 'contrast') 
+ori_data = subset(exp_data, exp_data$task_type == 'orientation') 
+
+
+# Cleaned Acc and Rt exp_data Summary ####
+ddply(con_data, .(sound), summarize, accuracy = mean(correct), RT = mean(response_time))
+ddply(ori_data, .(sound), summarize, accuracy = mean(correct), RT = mean(response_time))
+ddply(con_data, .(sig_str), summarize, accuracy = mean(correct), RT = mean(response_time))
+ddply(ori_data, .(sig_str), summarize, accuracy = mean(correct), RT = mean(response_time))
+
+# now we plot the curves by person 
+# NOTE: this is where we can visualize whether a participant performed at chance.
+# If a participant did NOT improve across sig_str, we remove them. After removing, clear environment and rerun
+
+# first, prep new dfs based on the task type for ease of graphing
+con_graph = ddply(con_data, .(id,sig_str), summarize, accuracy = mean(correct), RT = mean(response_time))
+ori_graph = ddply(ori_data, .(id,sig_str), summarize, accuracy = mean(correct), RT = mean(response_time))
+
+# graph the orientation performance of each participant
+# problem children for orientation:
+# 4, 6, 7, 11, 12, 21, 28
+ori_acc_avg = ggplot(ori_graph, aes(x = sig_str, y = accuracy)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~id) +
+  labs(
+    title = "Orientation",
+    x = "sig_str",
+    y = "Accuracy"
+  ) +
+  theme_minimal()
+ori_acc_avg
+#ggsave("Orientation_Accuracy_by_Participant.png", 
+#       plot = ori_acc_avg,
+#       path = "plots", 
+#       width = 10,
+#       height = 6,
+#       dpi = 300, 
+#       bg = 'white')
+#total rejections: 4, 6, 7, 10, 11, 12, 21, 22, 27, 28
+#only failed one test: 10, 12, 27, 28
+
+# graph the contrast performance of each participant
+# problem children for contrast:
+# 4, 6, 7, 10, 11, 21, 22, 27
+con_acc_avg = ggplot(con_graph, aes(x = sig_str, y = accuracy)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~id)+
+  scale_x_log10() +
+  labs(
+    title = "Contrast",
+    x = "sig_str",
+    y = "Accuracy"
+  ) +
+  theme_minimal()
+con_acc_avg
+#ggsave("Contrast_Accuracy_by_Participant.png", 
+#       plot = con_acc_avg,
+#       path = "plots", 
+#       width = 10,
+#       height = 6,
+#       dpi = 300,
+#       bg = 'white')
+
+
+# Orientation task LMEs - preliminary analysis####
+# this is included for preliminary exp_data - the full analysis is more involved and is below
+ori_lme_data = ddply(ori_data, .(id, sound, sig_str), summarise, accuracy = mean(correct), RT = mean(response_time)) # computing mean
+ori_lme_data = ddply(ori_lme_data, .(id, sig_str), transform, baseAcc = mean(accuracy[sound==-1]), baseRT = mean(RT[sound==-1]))
+ori_lme_data$difAcc = ori_lme_data$accuracy - ori_lme_data$baseAcc
+ori_lme_data$difRT = ori_lme_data$RT - ori_lme_data$baseRT
+
+RT.lme.ori = lmer(difRT ~ sound + (1|id), data = ori_lme_data)
+summary(RT.lme.ori)
+
+acc.lme.ori = lmer(difAcc ~ sound + (1|id), data = ori_lme_data)
+summary(acc.lme.ori)
+
+
+# visualize orientation accuracy by sound conditions over orientation levels per person
+ori_acc_by_sound = ggplot(ori_lme_data, aes(x = sig_str, y = accuracy, color = sound)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~id)+
+  labs(title = "Orientation",
+       x = "sig_str",
+       y = "Accuracy") +
+  theme_minimal() 
+ori_acc_by_sound
+#ggsave("individual_orientation_accuracy_by_sound.png",
+#       plot = ori_acc_by_sound,
+#       path = "plots",
+#       width = 10,
+#       height = 6,
+#       dpi = 300,
+#       bg = 'white')
+
+
+# Set up data frames for graphing averages
+# first we need to get the exp_data into a useful form, with mean and baseline by sound condition
+cdata = ddply(exp_data, .(id, sound, sig_str, task_type), summarise, accuracy = mean(correct), RT = mean(response_time)) # computing mean
+
+# we establish baseline acc and rt across sounds for ORIENTATION
+cdata_o = subset(cdata, cdata$task_type == 'orientation') 
+cdata_o = ddply(cdata_o, .(id, sig_str), transform, baseAcc = mean(accuracy[sound==-1]), baseRT = mean(RT[sound==-1])) # assigning baseline
+cdata_o_sum = ddply(cdata_o, .(sig_str,sound), summarise, acc = mean(accuracy), RT = mean(RT)) # assigning baseline
+
+# we establish baseline acc and rt across sounds for CONTRAST
+cdata_c = subset(cdata, cdata$task_type == 'contrast') 
+cdata_c = ddply(cdata_c, .(id, sig_str), transform, baseAcc = mean(accuracy[sound==-1]), baseRT = mean(RT[sound==-1])) # assigning baseline
+cdata_c_sum = ddply(cdata_c, .(sig_str,sound), summarise, acc = mean(accuracy), RT = mean(RT)) # assigning baseline
+
+# graph the average orientation performance accuracy
+ori_acc_avg_by_sound = ggplot(cdata_o_sum, aes(x = sig_str, y = acc, color = sound)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Average Orientation Accuracy by Sound Condition",
+       x = "Signal Strength",
+       y = "Accuracy") +
+  theme_minimal() 
+ori_acc_avg_by_sound
+
+# Install and load the dplyr package if not already done
+if(!require("dplyr")) install.packages("dplyr")
+
+# --- Step 1: Create a combined data frame for grouping ---
+# The logic of 'foveal' vs. 'peripheral' is not explicitly defined in your script.
+# You will need to define a new column based on your experimental parameters.
+# For example, let's assume 'foveal' is stimulus_direction == 0 and 'peripheral' is otherwise.
+# You also need to discretize 'sig_str' into 'Low', 'Med', and 'High' categories.
+
+# First, define the stimulus location based on your experiment's specific parameters
+# For example, let's assume 'foveal' is for direction == 0 and 'peripheral' is otherwise.
+exp_data <- exp_data %>%
+  mutate(stim_loc = ifelse(stimulus_direction == 0, "Foveal", "Peripheral"))
+
+# Next, discretize the continuous 'sig_str' into difficulty levels.
+# You will need to adjust the ranges to match your specific experiment.
+# This is a critical step, as your desired vector is grouped by these levels.
+exp_data <- exp_data %>%
+  mutate(difficulty = case_when(
+    task_type == "contrast" & sig_str <= 0.05 ~ "Low",
+    task_type == "contrast" & sig_str > 0.05 & sig_str <= 0.2 ~ "Med",
+    task_type == "contrast" & sig_str > 0.2 ~ "High",
+    task_type == "orientation" & sig_str <= 0.03 ~ "Low",
+    task_type == "orientation" & sig_str > 0.03 & sig_str <= 0.1 ~ "Med",
+    task_type == "orientation" & sig_str > 0.1 ~ "High",
+    TRUE ~ NA_character_
+  ))
+
+
+# --- Step 2: Calculate the grouped mean accuracy ---
+# We will use the `group_by()` and `summarize()` functions from `dplyr`.Z
+# This calculates the mean of `correct` for every unique combination of conditions.
+mu_vector_df <- exp_data %>%
+  group_by(sound, stim_loc, difficulty) %>%
+  summarise(
+    mean_accuracy = mean(correct),
+    .groups = 'drop' # This tells dplyr to not keep the grouping structure
+  ) %>%
+  # Arrange the output to match the desired order in your mu_vector_acc code block
+  arrange(sound, stim_loc, difficulty)
+
+# --- Step 3: Convert the result to a vector, if necessary ---
+# While the data frame is more readable, you can convert it to a vector.
+# Note: This approach is not recommended, as a data frame is more robust.
+# The `pull()` function extracts a single column as a vector.
+mu_vector_acc_calculated <- mu_vector_df %>%
+  pull(mean_accuracy)
+
+# Print the resulting data frame for inspection
+print(mu_vector_df)
